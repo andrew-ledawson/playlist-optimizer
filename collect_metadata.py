@@ -1,3 +1,4 @@
+import re
 from ytmusicapi import YTMusic
 import pickle, spotipy, time
 from spotipy.oauth2 import SpotifyOAuth
@@ -70,8 +71,9 @@ for candidate_playlist in ytm_playlists:
 
         # Store song info in a Song object
         for song_count, playlist_song in enumerate(playlist_contents['tracks']):
+            # Put update every 10 songs
             if song_count % 10 == 0:
-                print("Checking song " + str(song_count) + " of " + str(len(playlist_contents['tracks'])))
+                print("Processing song " + str(song_count) + " of " + str(len(playlist_contents['tracks'])))
             local_song = Song
             local_song.album = playlist_song['album']
             local_song.artist = playlist_song['artists'][0]['name']
@@ -88,7 +90,6 @@ for candidate_playlist in ytm_playlists:
             search_results=[]
             target_song = None
             while True:
-                # TODO: if search fails, dump first set of parens with "feat" inside them
                 pace_ops()
                 search_results = sp.search(query_string, type='track')
                 if search_results and len(search_results['tracks']['items']) > 0: # At least one song found
@@ -109,6 +110,11 @@ for candidate_playlist in ytm_playlists:
                 # Target song found, break out of loop
                 if target_song:
                     break
+                # If we are at the original search, try search without "feat." in the middle
+                if strict_time_matching and query_string == initial_query_string:
+                    query_string = re.sub('( \(\s*feat.+\))', '', query_string, flags=re.IGNORECASE)
+                    if query_string != initial_query_string:
+                        continue
                 # Song not found, prompt to modify search query and retry
                 print("No suitable Spotify results found for search \"" + query_string + "\".  Type a new search query, or enter nothing to do a loose search and give up if there are still no matches.")
                 user_search_string = input('Search Spotify for: ')
@@ -117,8 +123,8 @@ for candidate_playlist in ytm_playlists:
                 else:
                     query_string = user_search_string
             if target_song is None:
-                print("Could not get Spotify info for " + initial_query_string + ".  The rater-application will prompt you for info.")
-                break
+                # TODO: LD got "Nonetype" once for initial query so I'll wrap it in a string modifier?
+                print("Could not get Spotify info for " + str(initial_query_string) + ".  The rater-application will prompt you for info.")
             song_spotify_id = target_song['id']
 
             # Get song "features"
@@ -141,4 +147,4 @@ for candidate_playlist in ytm_playlists:
             local_playlist.songs.append(local_song)
 
         # Store playlist info
-        pickle.dump(local_playlist, open("playlists/" + local_playlist.yt_id+ "pp1", "wb"))
+        pickle.dump(local_playlist, open("playlist_" + local_playlist.yt_id+ "pp1", "wb"))
