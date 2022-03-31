@@ -20,9 +20,10 @@ class Song:
     bpm = 0
 
     # A dict of user ratings (dict values) (+2 to -2) for each custom trait (dict keys)
-    # TODO: Create a rating program that uses youtube-dl/yt-dlp and some external player to play portions of song 
-    # https://www.reddit.com/r/youtubedl/wiki/downloadingytsegments
-    # https://www.reddit.com/r/youtubedl/wiki/howdoidownloadpartsofavideo
+    # TODO: Create a rating module that uses youtube-dl/yt-dlp and external player like ffmpeg to play portion/offset
+    # Partial download: https://www.reddit.com/r/youtubedl/wiki/downloadingytsegments
+    # Partial download: https://www.reddit.com/r/youtubedl/wiki/howdoidownloadpartsofavideo
+    # YouTube DASH stream formats: https://gist.github.com/AgentOak/34d47c65b1d28829bb17c24c04a0096f
     user_ratings = {}
 
 # A dictionary of user-ratable traits for each song.  
