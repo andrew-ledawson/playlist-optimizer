@@ -1,24 +1,10 @@
 import glob, pickle, re, sys, time
+
 from ytmusicapi import YTMusic
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
-class Playlist:
-    name = ""
-    songs = {}
-    yt_id = ""
-
-class Song:
-    album = ""
-    artist = ""
-    name = ""
-    duration_s = 0
-    yt_id = ""
-    spotify_id = ""
-    camelot_position = -1
-    camelot_is_minor = None
-    bpm = 0
-    metadata_needs_review = False
+from foundation import *
 
 # A dict with keys of pitch class numbers and values of camelot wheel (major, minor) tuples
 camelot_lookup = {
