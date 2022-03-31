@@ -11,13 +11,18 @@ class Song:
 
     yt_id = ""
     spotify_id = ""
-    metadata_needs_review = False
+    # None if not downloaded, false if all downloaded, true if downloaded with error
+    # TODO: Update collector to support this change
+    metadata_needs_review = None
 
     camelot_position = -1
     camelot_is_minor = None
     bpm = 0
 
     # A dict of user ratings (dict values) (+2 to -2) for each custom trait (dict keys)
+    # TODO: Create a rating program that uses youtube-dl/yt-dlp and some external player to play portions of song 
+    # https://www.reddit.com/r/youtubedl/wiki/downloadingytsegments
+    # https://www.reddit.com/r/youtubedl/wiki/howdoidownloadpartsofavideo
     user_ratings = {}
 
 # A dictionary of user-ratable traits for each song.  

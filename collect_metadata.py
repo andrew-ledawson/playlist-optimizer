@@ -52,6 +52,7 @@ for playlist_file_name in playlist_files:
     playlist = pickle.load(playlist_file)
     playlist_file.close()
     saved_playlists[playlist.yt_id] = playlist
+# TODO: Keep a dict of all songs by YTM-id so we can avoid duplicate metadata lookups?
 
 # Go through each user playlist on YouTube Music
 pace_ops()
