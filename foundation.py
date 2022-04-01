@@ -1,10 +1,56 @@
-import glob, pickle
+import glob, pickle, re, sys, time
 from importlib.metadata import metadata
 from functools import total_ordering
 
+from ytmusicapi import YTMusic
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+
+"""
+Global variables and init scripts
+"""
+
+# A dictionary of user-ratable traits for each song, where each key is the name of a category
+# and each value is its explanation.  Capitalize correctly for UI display.  
+# Can be updated by adding new rating fields and/or moving out deprecated fields.  
+USER_RATINGS = {'Positivity' : 'Hopeful and optimistic, or regretful and pessimistic.',
+                'Drive' : 'Driving and forceful, or unhurried and gentle.',
+                'Presence' : 'Captivating and focused, or detached and distant.',
+                'Complexity' : 'Crowded and busy, or simple and manageable.'}
+
+# Deprecated ratings can be moved here so program will prompt users to re-rate accordingly
+DEPRECATED_RATINGS = {}
+
+PLAYLIST_FILE_PREFIX = 'playlist_'
+PLAYLIST_FILE_EXTENSION = '.pp1'
+
+# Check Python version on init
+MIN_PYTHON = (3, 6)
+if sys.version_info < MIN_PYTHON:
+    sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
+
+YTM = YTMusic('headers_auth.json')
+SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="CLIENT_ID",
+                                               client_secret="CLIENT_SECRET",
+                                               redirect_uri="http://www.example.com/",
+                                               scope="user-library-read"))
+
+LAST_OP_TIME = time.time()
+def pace_ops():
+    """Verifies when last query was sent and waits until it's safe to send another"""
+    global LAST_OP_TIME
+    remaining_time = (LAST_OP_TIME + 1) - time.time()
+    if remaining_time > 0:
+        time.sleep(remaining_time)
+    LAST_OP_TIME = time.time()
+
+"""
+Global classes
+"""
+
 class Playlist:
     name = ""
-    songs = {}
+    songs_ids = []
     yt_id = ""
 
 @total_ordering
@@ -99,23 +145,13 @@ class Song:
         state['owning_playlists'] = []
         return state
 
-# A dictionary of user-ratable traits for each song, where each key is the name of a category
-# and each value is its explanation.  Capitalize correctly for UI display.  
-# Can be updated by adding new rating fields and/or moving out deprecated fields.  
-USER_RATINGS = {'Positivity' : 'Hopeful and optimistic, or regretful and pessimistic.',
-                'Drive' : 'Driving and forceful, or unhurried and gentle.',
-                'Presence' : 'Captivating and focused, or detached and distant.',
-                'Complexity' : 'Crowded and busy, or simple and manageable.'}
+"""
+Global funtions
+"""
 
-# Deprecated ratings can be moved here so program will prompt users to re-rate accordingly
-DEPRECATED_RATINGS = {}
-
-PLAYLIST_FILE_PREFIX = 'playlist_'
-PLAYLIST_FILE_EXTENSION = '.pp1'
-
-# Loads local playlist files into a dict (keyed by YT id) and returns it.  Takes optional path argument.
-# Also returns dict of songs by YT id
 def load_local_playlists(path = '.'):
+    """Loads local playlist files into a dict (keyed by YT id) and returns it.  
+    Also returns dict of songs by YT id.  Takes optional path argument."""
     playlist_files = glob.glob(PLAYLIST_FILE_PREFIX + '*' + PLAYLIST_FILE_EXTENSION, dir_fd=glob.glob(path))
     saved_playlists = {}
     for playlist_file_name in playlist_files:
@@ -133,3 +169,102 @@ def load_local_playlists(path = '.'):
                     print("Warning: song \"" + song.name + "\" by \"" + song.artist + "\" has a duplicate that differs.  Please fix this in the rater program.  ")
 
     return saved_playlists, all_seen_songs
+
+def gather_song_metadata(song: Song):
+    if song.name is None or song.artist is None:
+        # TODO: Finish rewriting everything to use song db
+        print("Don't know what to search for to find Spotify info for song \"" + str(song.name) " \" (YouTube ID " + str(song.yt_id) + ").")
+    # Search Spotify for each song so we can then look up its "features"
+    initial_query_string = query_string = song.name + " " + song.artist
+    strict_time_matching = True
+    search_results=[]
+    target_song = None
+    while True:
+        pace_ops()
+        search_results = SP.search(query_string, type='track')
+
+        # Results were returned, check them
+        if search_results and len(search_results['tracks']['items']) > 0:
+            # Check that the Spotify song is about the same duration as the YTM version
+            if strict_time_matching:
+                for candidate_song in search_results['tracks']['items']:
+                    time_difference_s = candidate_song['duration_ms']/1000 - song.duration_s
+                    if abs(time_difference_s) <= 3:
+                        target_song = candidate_song
+                        song.metadata_needs_review = False
+                        break
+            # User has disabled duration checking, just take the first song and notify them
+            else:
+                candidate_song = search_results['tracks']['items'][0]
+                time_difference_s = candidate_song['duration_ms']/1000 - song.duration_s
+                print("Choosing first search result, which is " + str(abs(time_difference_s)) + " seconds " + ("longer" if time_difference_s > 0 else "shorter") + ".")
+                target_song = search_results['tracks']['items'][0]
+                song.metadata_needs_review = True
+                break
+
+        # No song found even with loose time matching, abort
+        elif not strict_time_matching:
+            break
+
+        # Target song found, break out of loop
+        if target_song:
+            break
+
+        # If the initial search didn't match, try search without "feat." in the middle
+        if strict_time_matching and query_string == initial_query_string:
+            query_string = re.sub('( \(\s*feat.+\))', '', query_string, flags=re.IGNORECASE)
+            # There was a "feat" to reove in the search string, so we'll retry the search
+            if query_string != initial_query_string:
+                continue
+
+        # Song not found, prompt user to modify search query
+        print("No suitable Spotify results found for search \"" + query_string + "\".  Type a new search query, or enter nothing to do a loose search and give up if there are still no matches.")
+        user_search_string = input('Search Spotify for: ')
+        # User had blank input; disable duration matching
+        if len(user_search_string) < 1:
+            strict_time_matching = False
+        else:
+            query_string = user_search_string
+
+    # No song was found, can't look up data.  Warn user and flag song.  
+    if target_song is None:
+        # TODO: LD got "Nonetype" once for initial query so I'll wrap it in a string modifier?
+        print("Could not get Spotify info for " + initial_query_string + ".  The rater-application will prompt you for info.")
+        song.metadata_needs_review = True
+
+    # Song was found.  Look up its "features" and process them before saving song to playlist.
+    else:
+        song.spotify_id = target_song['id']
+        pace_ops()
+        features = sp.audio_features(tracks=[song.spotify_id])[0]
+
+        song.bpm = features['tempo']
+
+        # Validate and convert song key
+        # A dict with Spotify pitch class numbers mapped to camelot wheel numbers (major, minor)
+        camelot_lookup = {
+            0: (8, 5),
+            1: (3, 12),
+            2: (10, 7),
+            3: (5, 2),
+            4: (12, 9),
+            5: (7, 4), 
+            6: (2, 11),
+            7: (9, 6),
+            8: (4, 1),
+            9: (11, 8),
+            10: (6, 3),
+            11: (1, 10)
+        }
+        if features['key'] == -1:
+            print("Spotify does not know the key of " + initial_query_string)
+            song.metadata_needs_review = True
+        else:
+            if features['mode'] == 1:
+                song.camelot_position, _ = camelot_lookup[features['key']]
+                song.camelot_is_minor = False
+            else:
+                _, song.camelot_position = camelot_lookup[features['key']]
+                song.camelot_is_minor = True
+            if song.metadata_needs_review is None:
+                song.metadata_needs_review = False
