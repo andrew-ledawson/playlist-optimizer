@@ -1,4 +1,5 @@
 import glob, pickle, re, sys, time
+import os
 from importlib.metadata import metadata
 from functools import total_ordering
 
@@ -23,6 +24,7 @@ DEPRECATED_RATINGS = {}
 
 PLAYLIST_FILE_PREFIX = 'playlist_'
 PLAYLIST_FILE_EXTENSION = '.pp1'
+SONG_DB_FILE = 'songs.pps'
 
 # Check Python version on init
 MIN_PYTHON = (3, 6)
@@ -49,9 +51,9 @@ Global classes
 """
 
 class Playlist:
-    name = ""
-    songs_ids = []
-    yt_id = ""
+    name = None
+    songs_ids = [] # YouTube ID strings
+    yt_id = None
 
 @total_ordering
 class Song:
@@ -149,35 +151,39 @@ class Song:
 Global funtions
 """
 
-def load_local_playlists(path = '.'):
-    """Loads local playlist files into a dict (keyed by YT id) and returns it.  
-    Also returns dict of songs by YT id.  Takes optional path argument."""
-    playlist_files = glob.glob(PLAYLIST_FILE_PREFIX + '*' + PLAYLIST_FILE_EXTENSION, dir_fd=glob.glob(path))
-    saved_playlists = {}
-    for playlist_file_name in playlist_files:
-        playlist_file = open(playlist_file_name, "rb")
-        playlist = pickle.load(playlist_file)
-        playlist_file.close()
-        saved_playlists[playlist.yt_id] = playlist
+def get_user_bool(message):
+    """Prompts the user to input 'y' or 'n' with a message"""
+    user_input = ""
+    while user_input != 'y' and user_input != 'n':
+        user_input = input(message + "(y/n)")
+    return user_input == 'y'
 
-    all_seen_songs = {}
-    for saved_playlist in saved_playlists.values:
-        for song in saved_playlist.songs:
-            if song.yt_id in all_seen_songs:
-                all_seen_songs[song.yt_id].owning_playlists.append(saved_playlist.yt_id)
-                if song != all_seen_songs[song.yt_id]:
-                    print("Warning: song \"" + song.name + "\" by \"" + song.artist + "\" has a duplicate that differs.  Please fix this in the rater program.  ")
-
-    return saved_playlists, all_seen_songs
+def download_metadata(id):
+    """Takes a YouTube song ID and gets basic metadata."""
+    song_data = YTM.get_song(id)['videoDetails']
+    local_song = Song
+    local_song.yt_id = id
+    local_song.artist = song_data['author']
+    local_song.name = song_data['title']
+    local_song.duration_s = int(song_data['lengthSeconds'])
+    local_song.yt_id = song_data['videoId']
+    if id != local_song.yt_id:
+        print("Song \"" + local_song.name + "\" returned a different id (" + local_song.yt_id + ") than the one used to look it up (" + id + ").  Ignoring the returned id.  ")
+    return local_song
 
 def gather_song_metadata(song: Song):
+    """Takes a Song with basic metadata and uses Spotify Track Features API to fill in extended musical metadata"""
+
+    # Make an initial search term
+    initial_query_string = ""
     if song.name is None or song.artist is None:
-        # TODO: Finish rewriting everything to use song db
-        print("Don't know what to search for to find Spotify info for song \"" + str(song.name) " \" (YouTube ID " + str(song.yt_id) + ").")
-    # Search Spotify for each song so we can then look up its "features"
-    initial_query_string = query_string = song.name + " " + song.artist
+        print("Not sure how to search Spotify for song \"" + str(song.name) "\" (YouTube ID " + str(song.yt_id) + ").")
+        user_search_string = input('Search Spotify for: ')
+    else:
+        initial_query_string = query_string = song.name + " " + song.artist
+
+    # Allow retrying search until results found (or search options are exhausted)
     strict_time_matching = True
-    search_results=[]
     target_song = None
     while True:
         pace_ops()
@@ -228,7 +234,6 @@ def gather_song_metadata(song: Song):
 
     # No song was found, can't look up data.  Warn user and flag song.  
     if target_song is None:
-        # TODO: LD got "Nonetype" once for initial query so I'll wrap it in a string modifier?
         print("Could not get Spotify info for " + initial_query_string + ".  The rater-application will prompt you for info.")
         song.metadata_needs_review = True
 
@@ -236,12 +241,12 @@ def gather_song_metadata(song: Song):
     else:
         song.spotify_id = target_song['id']
         pace_ops()
-        features = sp.audio_features(tracks=[song.spotify_id])[0]
+        features = SP.audio_features(tracks=[song.spotify_id])[0]
 
         song.bpm = features['tempo']
 
-        # Validate and convert song key
-        # A dict with Spotify pitch class numbers mapped to camelot wheel numbers (major, minor)
+        # Validate and convert Spotify pitch class numbers mapped to camelot wheel numbers 
+        # Camelot position numbers are in tuple of (position for major, position for minor)
         camelot_lookup = {
             0: (8, 5),
             1: (3, 12),
@@ -268,3 +273,46 @@ def gather_song_metadata(song: Song):
                 song.camelot_is_minor = True
             if song.metadata_needs_review is None:
                 song.metadata_needs_review = False
+
+    return song
+
+def load_local_playlists(path = '.'):
+    """Loads local playlist files into a dict (keyed by YT id) and returns it.  
+    Also returns dict of songs by YT id.  Takes optional path argument or just seaches current directory."""
+
+    print("Loading songs database and playlist files from " + path + ".  You may be prompted to correct errors.  ")
+
+    # Load songs db, checking for backup in case save was interrupted
+    all_songs = {}
+    if os.path.exists(SONG_DB_FILE + '.bak'):
+        if get_user_bool("Songs database backup detected; last save may have failed.  Replace the primary copy with the backup?  "):
+            os.rename(SONG_DB_FILE + '.bak', SONG_DB_FILE)
+        else:
+            os.remove(SONG_DB_FILE + '.bak')
+        songs_file = open(SONG_DB_FILE, "rb")
+        all_songs = pickle.load(songs_file)
+        songs_file.close()
+
+    # Load playlist files
+    playlist_files = glob.glob(PLAYLIST_FILE_PREFIX + '*' + PLAYLIST_FILE_EXTENSION, dir_fd=glob.glob(path))
+    saved_playlists = {}
+    for playlist_file_name in playlist_files:
+        playlist_file = open(playlist_file_name, "rb")
+        playlist = pickle.load(playlist_file)
+        playlist_file.close()
+        saved_playlists[playlist.yt_id] = playlist
+
+        # Check if any songs are not in database and download them
+        missing_metadata_count = 0
+        for song_id in playlist.songs_ids:
+            if song_id not in all_songs:
+                missing_metadata_count = missing_metadata_count + 1
+                if missing_metadata_count % 10 == 0:
+                    print("Correcting metadata for " + str(missing_metadata_count) + "th song.  ")
+                missing_song = download_metadata(song_id)
+                gather_song_metadata(missing_song)
+                all_songs[song_id] = missing_song
+        if missing_metadata_count > 0:
+            print("Downloaded " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\".  ")
+
+    return saved_playlists, all_songs
