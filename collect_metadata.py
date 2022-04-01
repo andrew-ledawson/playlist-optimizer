@@ -119,6 +119,7 @@ for candidate_playlist in ytm_playlists:
                             time_difference_s = candidate_song['duration_ms']/1000 - local_song.duration_s
                             if abs(time_difference_s) <= 3:
                                 target_song = candidate_song
+                                local_song.metadata_needs_review = False
                                 break
                     # User has disabled duration checking, just take the first song and notify them
                     else:
@@ -170,6 +171,7 @@ for candidate_playlist in ytm_playlists:
                 # Validate and convert song key
                 if features['key'] == -1:
                     print("Spotify does not know the key of " + initial_query_string)
+                    local_song.metadata_needs_review = True
                 else:
                     if features['mode'] == 1:
                         local_song.camelot_position, _ = camelot_lookup[features['key']]
@@ -177,6 +179,8 @@ for candidate_playlist in ytm_playlists:
                     else:
                         _, local_song.camelot_position = camelot_lookup[features['key']]
                         local_song.camelot_is_minor = True
+                    if local_song.metadata_needs_review is None:
+                        local_song.metadata_needs_review = False
 
             # Save song to playlist
             local_playlist.songs[local_song.yt_id] = local_song

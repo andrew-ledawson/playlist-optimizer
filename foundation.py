@@ -12,7 +12,6 @@ class Song:
     yt_id = ""
     spotify_id = ""
     # None if not downloaded, false if all downloaded, true if downloaded with error
-    # TODO: Update collector to support this change
     metadata_needs_review = None
 
     camelot_position = -1
