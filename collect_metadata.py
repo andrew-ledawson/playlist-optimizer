@@ -1,4 +1,4 @@
-import glob, pickle, re, sys, time
+import re, sys, time
 
 from ytmusicapi import YTMusic
 import spotipy
@@ -45,14 +45,7 @@ def pace_ops():
     last_op_time = time.time()
 
 # Check which playlists are already saved
-playlist_files = glob.glob('playlist_*.pp1', dir_fd=glob.glob('.'))
-saved_playlists = {}
-for playlist_file_name in playlist_files:
-    playlist_file = open(playlist_file_name, "rb")
-    playlist = pickle.load(playlist_file)
-    playlist_file.close()
-    saved_playlists[playlist.yt_id] = playlist
-# TODO: Keep a dict of all songs by YTM-id so we can avoid duplicate metadata lookups?
+saved_playlists, all_songs = load_local_playlists('.')
 
 # Go through each user playlist on YouTube Music
 pace_ops()
@@ -84,7 +77,6 @@ for candidate_playlist in ytm_playlists:
 
         # Store song info in a Song object
         for song_count, playlist_song in enumerate(remote_playlist_contents['tracks']):
-            # 
             # Print update every 10 songs
             if song_count % 10 == 0:
                 print("Checking song " + str(song_count) + " of " + str(len(remote_playlist_contents['tracks'])))
@@ -98,9 +90,7 @@ for candidate_playlist in ytm_playlists:
             local_song.duration_s = 60 * int(time_strings[0]) + int(time_strings[1])
             local_song.yt_id = playlist_song['videoId']
 
-            # Don't update songs that were already seen
-            if local_song.yt_id in local_playlist.songs.keys:
-                continue
+            # TODO: Rewrite everything to have a central songs DB, and playlists just have a list of YT ids
 
             # Search Spotify for each song so we can then look up its "features"
             initial_query_string = query_string = local_song.name + " " + local_song.artist
