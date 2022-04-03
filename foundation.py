@@ -71,6 +71,8 @@ def run_API_request(operation, description="an unknown web query"):
     LAST_OP_TIME = time.time()
     return result
 
+MAX_TIME_DIFFERENCE = 2
+
 """
 Global classes
 """
@@ -219,7 +221,7 @@ def gather_song_features(song: Song):
             if strict_time_matching:
                 for candidate_song in search_results['tracks']['items']:
                     time_difference_s = candidate_song['duration_ms']/1000 - song.duration_s
-                    if abs(time_difference_s) <= 3:
+                    if abs(time_difference_s) < MAX_TIME_DIFFERENCE:
                         target_song = candidate_song
                         song.metadata_needs_review = False
                         break
@@ -260,7 +262,7 @@ def gather_song_features(song: Song):
 
     # No song was found, can't look up data.  Warn user and flag song.  
     if target_song is None:
-        print("Could not get Spotify info for \"" + initial_query_string + "\". The rater-application will prompt you for info. ")
+        print("Could not get Spotify info for \"" + initial_query_string + "\". Leaving metadata empty. ")
         song.metadata_needs_review = True
 
     # Song was found.  Look up its "features" and process them before saving song to playlist.
@@ -271,7 +273,13 @@ def gather_song_features(song: Song):
             song.album = target_song['album']['name']
         features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify data for track ID + " + song.spotify_id)
 
-        song.bpm = features['tempo']
+        # Make BPM a number between 90 and 180
+        provisional_bpm = features['tempo']
+        while provisional_bpm < 90:
+            provisional_bpm = provisional_bpm * 2
+        while provisional_bpm >= 180:
+            provisional_bpm = provisional_bpm / 2
+        song.bpm = provisional_bpm
 
         # Validate and convert Spotify pitch class numbers mapped to camelot wheel numbers 
         # Camelot position numbers are in tuple of (position for major, position for minor)
