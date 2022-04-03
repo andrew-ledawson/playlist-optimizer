@@ -30,6 +30,8 @@ SONG_DB_FILE = 'songs.pps'
 MIN_PYTHON = (3, 6)
 if sys.version_info < MIN_PYTHON:
     sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
+else:
+    print("Starting a playlist optimizer utility")
 
 YTM = YTMusic('headers_auth.json')
 SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="CLIENT_ID",
@@ -50,7 +52,6 @@ def run_API_request(operation, description="an unknown web query"):
     if TIME_BETWEEN_OPS != DEFAULT_TIME_BETWEEN_OPS and OPS_SINCE_BACKOFF > OPS_TO_RESTORE_BACKOFF:
         TIME_BETWEEN_OPS = TIME_BETWEEN_OPS / 2
         OPS_SINCE_BACKOFF = 0
-        print("DEBUG: Relaxing op time to " + str(TIME_BETWEEN_OPS))
 
     # Run the operation, retrying on exceptions
     result = None
@@ -65,11 +66,10 @@ def run_API_request(operation, description="an unknown web query"):
             if TIME_BETWEEN_OPS == DEFAULT_TIME_BETWEEN_OPS * MAX_TIME_MULTIPLIER:
                 print("DEBUG: At max op time of " + str(TIME_BETWEEN_OPS))
                 break
-            print("Exception returned while attempting " + description + ". Retrying with " + str(TIME_BETWEEN_OPS) + " seconds between requests... ")
             OPS_SINCE_BACKOFF = 0
-            TIME_BETWEEN_OPS = TIME_BETWEEN_OPS * 2
+            print("Error found while attempting " + description + ". Temporarily spacing out requests by " + str(TIME_BETWEEN_OPS) + " seconds... ")
     if result is None:
-        print("Exceeded retries. Check your credentials and internet connection. Continuing... ")
+        print("Exceeded retries. Continuing... ")
     LAST_OP_TIME = time.time()
     return result
 
@@ -223,7 +223,7 @@ def gather_song_features(song: Song):
             if strict_time_matching:
                 for candidate_song in search_results['tracks']['items']:
                     time_difference_s = candidate_song['duration_ms']/1000 - song.duration_s
-                    if abs(time_difference_s) < MAX_TIME_DIFFERENCE:
+                    if abs(time_difference_s) <= MAX_TIME_DIFFERENCE:
                         target_song = candidate_song
                         song.metadata_needs_review = False
                         break
@@ -231,7 +231,7 @@ def gather_song_features(song: Song):
             else:
                 candidate_song = search_results['tracks']['items'][0]
                 time_difference_s = candidate_song['duration_ms']/1000 - song.duration_s
-                print("Choosing the first search result, which is " + str(int(abs(time_difference_s))) + " seconds " + ("longer" if time_difference_s > 0 else "shorter") + ". ")
+                print("Selected the first search result, which is " + str(int(abs(time_difference_s))) + " seconds " + ("longer" if time_difference_s > 0 else "shorter") + ". ")
                 target_song = search_results['tracks']['items'][0]
                 song.metadata_needs_review = True
                 break
@@ -243,7 +243,7 @@ def gather_song_features(song: Song):
         # Target song found, break out of loop
         if target_song:
             if user_search_string != "":
-                print("Found a matching song from your search. ")
+                print("Found a matching song. ")
             break
 
         # If the initial search didn't match, try search without "feat." in the middle
@@ -254,7 +254,7 @@ def gather_song_features(song: Song):
                 continue
 
         # Song not found, prompt user to modify search query
-        print("No suitable Spotify results found for search \"" + query_string + "\". Type a new search query, or enter nothing to do a final retry without requiring a certain length. ")
+        print("No song of matching length was found for the Spotify search \"" + query_string + "\". Try a new search query, or enter nothing to do a final retry without trying to match song length. ")
         user_search_string = input('Search Spotify for: ')
         # User had blank input; disable duration matching
         if len(user_search_string) < 1:
@@ -264,7 +264,7 @@ def gather_song_features(song: Song):
 
     # No song was found, can't look up data.  Warn user and flag song.  
     if target_song is None:
-        print("Could not get Spotify info for \"" + initial_query_string + "\". Leaving metadata empty. ")
+        print("Search still had no results; leaving song metadata empty. ")
         song.metadata_needs_review = True
 
     # Song was found.  Look up its "features" and process them before saving song to playlist.
@@ -318,16 +318,16 @@ def load_local_playlists(path = '.'):
     """Loads local playlist files into a dict (keyed by YT id) and returns it.  
     Also returns dict of songs by YT id.  Takes optional path argument or just seaches current directory."""
 
-    print("Loading songs database and playlist files from \"" + path + "\". You may be prompted to correct errors. ")
+    print("Loading songs database and playlist files from folder \"" + path + "\". You may be prompted to correct errors. ")
 
     # Load songs db, checking for backup in case save was interrupted
-    # TODO: are songs being detected?
     all_songs = {}
     if os.path.exists(SONG_DB_FILE + '.bak'):
         if get_user_bool("Songs database backup detected; last save may have failed. Replace the primary copy with the backup? "):
             os.rename(SONG_DB_FILE + '.bak', SONG_DB_FILE)
         else:
             os.remove(SONG_DB_FILE + '.bak')
+    if os.path.exists(SONG_DB_FILE):
         songs_file = open(SONG_DB_FILE, "rb")
         all_songs = pickle.load(songs_file)
         songs_file.close()
@@ -354,4 +354,5 @@ def load_local_playlists(path = '.'):
         if missing_metadata_count > 0:
             print("Downloaded " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\". Note that album titles could not be loaded. ")
 
+    print("Loaded " + str(len(saved_playlists.keys())) + " saved playlists and " + str(len(all_songs.keys())) + " songs. ")
     return saved_playlists, all_songs

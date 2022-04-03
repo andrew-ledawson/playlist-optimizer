@@ -3,19 +3,19 @@ import os
 from foundation import *
 
 # Launch and auth YouTube Music and Spotify
-print("Launching playlist metadata collector. ")
+print("Playlist metadata collector")
+print("Gets playlists by a particular user from your YouTube Music library and downloads information on the songs.")
 
 # Check which playlists are already saved
 target_folder = '.'
 saved_playlists, all_songs = load_local_playlists(target_folder)
-print("Loaded " + str(len(saved_playlists.keys())) + " saved playlists from folder. ")
 
 # Go through each user playlist on YouTube Music
 playlist_limit = int(input("How many of your playlists to load from YouTube Music? "))
 ytm_playlists = run_API_request(lambda : YTM.get_library_playlists(limit=playlist_limit), "to load YouTube Music library playlists")
 print("Got " + str(len(ytm_playlists)) + " playlists from YouTube Music. ")
-print("What is the exact spelling of the desired YouTube Music account name or channel ID? Check by opening one of the playlists on music.youtube.com and looking at the author name directly below the playlist name. ")
-user_name = input("Name/ID: ")
+print("What author's playlists should be downloaded from your YouTube Music Library? Check by opening one of the playlists on music.youtube.com and looking at the author name (directly below the playlist name). ")
+user_name = input("Account name or channel ID: ")
 for candidate_playlist in ytm_playlists:
     local_playlist = Playlist()
     local_playlist.name = candidate_playlist['title']
@@ -35,7 +35,7 @@ for candidate_playlist in ytm_playlists:
         # Get songs of each playlist
         remote_playlist_contents = run_API_request(lambda : YTM.get_playlist(playlistId=local_playlist.yt_id, limit=int(candidate_playlist['count']) + 1), "to get the songs for YouTube Music playlist \"" + local_playlist.name + "\"")
         playlist_length = str(len(remote_playlist_contents['tracks']))
-        print("Playlist has " + playlist_length + " songs to check... ")
+        print("Playlist has " + playlist_length + " songs to check, starting... ")
 
         # Store song info in a Song object
         for song_count, playlist_song in enumerate(remote_playlist_contents['tracks']):
@@ -59,10 +59,6 @@ for candidate_playlist in ytm_playlists:
                     print("Using alternate method to get duration of song \"" + local_song.name + "\". ")
                     alt_lookup_song = download_metadata(local_song.yt_id)
                     local_song.duration_s = alt_lookup_song.duration_s
-                    # Compare metadata just in case
-                    alt_lookup_song.album = local_song.album # Album not included in song info API
-                    if local_song != alt_lookup_song:
-                        print("Caution: alternate method gave different song metadata! ")
 
                 gather_song_features(local_song)
                 all_songs[local_song.yt_id] = local_song
@@ -75,13 +71,15 @@ for candidate_playlist in ytm_playlists:
         playlist_file.close()
         print("Done processing playlist \"" + local_playlist.name + "\"; saved to folder. ")
 
-        if not get_user_bool("Want to continue downloading? "):
-            continue
+        if not get_user_bool("Want to continue checking additional playlists? "):
+            break
 
 print("Done processing returned playlists; saving song database and exiting. ")
 # Save song database, moving old copy to backup location in case save is interrupted
-os.rename(SONG_DB_FILE, SONG_DB_FILE + '.bak')
+if os.path.exists(SONG_DB_FILE):
+    os.rename(SONG_DB_FILE, SONG_DB_FILE + '.bak')
 songs_file = open(SONG_DB_FILE, "wb")
 pickle.dump(all_songs, songs_file)
 songs_file.close()
-os.remove(SONG_DB_FILE + '.bak')
+if os.path.exists(SONG_DB_FILE + '.bak'):
+    os.remove(SONG_DB_FILE + '.bak')
