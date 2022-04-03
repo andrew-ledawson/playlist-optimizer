@@ -1,5 +1,7 @@
 .cache
 __pycache__
-playlist_*.pp1
-songs.pps
-songs.pps.bak
+playlist_*.ytp
+songs.yts
+songs.yts.bak
+ffmpeg/
+yt-dlp.exe

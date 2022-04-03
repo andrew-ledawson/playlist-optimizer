@@ -2,6 +2,7 @@ import glob, pickle, re, sys, time
 import os
 from importlib.metadata import metadata
 from functools import total_ordering
+from typing import Callable
 
 from ytmusicapi import YTMusic
 import spotipy
@@ -23,8 +24,8 @@ USER_RATINGS = {'Positivity' : 'Hopeful and optimistic, or regretful and pessimi
 DEPRECATED_RATINGS = {}
 
 PLAYLIST_FILE_PREFIX = 'playlist_'
-PLAYLIST_FILE_EXTENSION = '.pp1'
-SONG_DB_FILE = 'songs.pps'
+PLAYLIST_FILE_EXTENSION = '.ytp'
+SONG_DB_FILE = 'songs.yts'
 
 # Check Python version on init
 MIN_PYTHON = (3, 6)
@@ -44,7 +45,7 @@ TIME_BETWEEN_OPS = DEFAULT_TIME_BETWEEN_OPS = 1
 OPS_SINCE_BACKOFF = 0
 OPS_TO_RESTORE_BACKOFF = 20
 MAX_TIME_MULTIPLIER = 32
-def run_API_request(operation, description="an unknown web query"):
+def run_API_request(operation : Callable, description="an unknown web query"):
     """Runs any lambda, enforcing a time between each call, and returns its result."""
     global LAST_OP_TIME, TIME_BETWEEN_OPS, OPS_SINCE_BACKOFF, DEFAULT_TIME_BETWEEN_OPS, OPS_TO_RESTORE_BACKOFF, MAX_TIME_MULTIPLIER
 
@@ -81,7 +82,7 @@ Global classes
 
 class Playlist:
     name = None
-    songs_ids = [] # YouTube ID strings
+    song_ids = None
     yt_id = None
 
 @total_ordering
@@ -107,6 +108,13 @@ class Song:
     # YouTube DASH stream formats: https://gist.github.com/AgentOak/34d47c65b1d28829bb17c24c04a0096f
     user_ratings = {}
     #owning_playlists = []
+
+    def has_latest_ratings(self):
+        global USER_RATINGS
+        for trait in USER_RATINGS:
+            if trait not in self.user_ratings or self.user_ratings[trait] == None:
+                return False
+        return True
 
     def __lt__(self, other) -> bool:
         # Ensure other object is a Song
@@ -180,14 +188,14 @@ class Song:
 Global funtions
 """
 
-def get_user_bool(message):
+def get_user_bool(message : str) -> bool:
     """Prompts the user to input 'y' or 'n' with a message"""
     user_input = ""
     while user_input != 'y' and user_input != 'n':
         user_input = input(message + "(y/n): ")
     return user_input == 'y'
 
-def download_metadata(id):
+def download_metadata(id : str) -> Song:
     """Takes a YouTube song ID and gets basic metadata (using a different API than the playlist downloaded)."""
     song_data = run_API_request(lambda : YTM.get_song(id)['videoDetails'], "to look up metadata for YouTube song " + id)
     local_song = Song()
@@ -199,7 +207,7 @@ def download_metadata(id):
         print("Song \"" + local_song.name + "\" returned a different id (" + local_song.yt_id + ") than the one used to look it up (" + id + "). Ignoring the returned id. ")
     return local_song
 
-def gather_song_features(song: Song):
+def gather_song_features(song : Song) -> Song:
     """Takes a Song with basic metadata and uses Spotify Track Features API to fill in extended musical metadata"""
 
     # Make an initial search term
@@ -314,7 +322,7 @@ def gather_song_features(song: Song):
 
     return song
 
-def load_local_playlists(path = '.'):
+def load_local_playlists(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
     """Loads local playlist files into a dict (keyed by YT id) and returns it.  
     Also returns dict of songs by YT id.  Takes optional path argument or just seaches current directory."""
 
@@ -344,7 +352,9 @@ def load_local_playlists(path = '.'):
 
         # Check if any songs are not in database and download them
         missing_metadata_count = 0
-        for song_id in playlist.songs_ids:
+        if playlist.song_ids is None:
+            print("Warning: playlist ID " + playlist.yt_id + " did not finish saving. You may need to delete its file. ")
+        for song_id in playlist.song_ids:
             if song_id not in all_songs:
                 # Print update every 10 retrievals since they take a while
                 if missing_metadata_count % 10 == 9:
@@ -356,3 +366,13 @@ def load_local_playlists(path = '.'):
 
     print("Loaded " + str(len(saved_playlists.keys())) + " saved playlists and " + str(len(all_songs.keys())) + " songs. ")
     return saved_playlists, all_songs
+
+def write_song_db(all_songs : dict[str, Song]):
+    # Save song database, moving old copy to backup location in case save is interrupted
+    if os.path.exists(SONG_DB_FILE):
+        os.rename(SONG_DB_FILE, SONG_DB_FILE + '.bak')
+    songs_file = open(SONG_DB_FILE, "wb")
+    pickle.dump(all_songs, songs_file)
+    songs_file.close()
+    if os.path.exists(SONG_DB_FILE + '.bak'):
+        os.remove(SONG_DB_FILE + '.bak')

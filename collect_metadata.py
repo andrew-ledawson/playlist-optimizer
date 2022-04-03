@@ -22,6 +22,7 @@ for candidate_playlist in ytm_playlists:
     local_playlist.yt_id = candidate_playlist['playlistId']
     local_playlist_author_name = candidate_playlist.get('author', [{}])[0].get('name', '')
     local_playlist_author_id =  candidate_playlist.get('author', [{}])[0].get('id', '')
+    local_playlist.song_ids = []
 
     # Omit playlists by other users or YTM themselves
     if local_playlist_author_name == user_name or local_playlist_author_id == user_name:
@@ -31,6 +32,8 @@ for candidate_playlist in ytm_playlists:
         if local_playlist.yt_id in saved_playlists:
             if not get_user_bool("Playlist was already downloaded. Update? "):
                 continue
+            elif saved_playlists[local_playlist.yt_id].song_ids is not None:
+                local_playlist.song_ids = saved_playlists[local_playlist.yt_id].song_ids
 
         # Get songs of each playlist
         remote_playlist_contents = run_API_request(lambda : YTM.get_playlist(playlistId=local_playlist.yt_id, limit=int(candidate_playlist['count']) + 1), "to get the songs for YouTube Music playlist \"" + local_playlist.name + "\"")
@@ -63,10 +66,10 @@ for candidate_playlist in ytm_playlists:
                 gather_song_features(local_song)
                 all_songs[local_song.yt_id] = local_song
 
-            local_playlist.songs_ids.append(local_song.yt_id)
+            local_playlist.song_ids.append(local_song.yt_id)
 
         # Store playlist as a file
-        playlist_file = open(target_folder + "/playlist_" + local_playlist.yt_id + ".pp1", "wb")
+        playlist_file = open(target_folder + "/" + PLAYLIST_FILE_PREFIX + local_playlist.yt_id + PLAYLIST_FILE_EXTENSION, "wb")
         pickle.dump(local_playlist, playlist_file)
         playlist_file.close()
         print("Done processing playlist \"" + local_playlist.name + "\"; saved to folder. ")
@@ -74,12 +77,6 @@ for candidate_playlist in ytm_playlists:
         if not get_user_bool("Want to continue checking additional playlists? "):
             break
 
+# TODO: Check db for songs that do not belong to a playlist and offer to delete them
 print("Done processing returned playlists; saving song database and exiting. ")
-# Save song database, moving old copy to backup location in case save is interrupted
-if os.path.exists(SONG_DB_FILE):
-    os.rename(SONG_DB_FILE, SONG_DB_FILE + '.bak')
-songs_file = open(SONG_DB_FILE, "wb")
-pickle.dump(all_songs, songs_file)
-songs_file.close()
-if os.path.exists(SONG_DB_FILE + '.bak'):
-    os.remove(SONG_DB_FILE + '.bak')
+write_song_db(all_songs)
