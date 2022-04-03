@@ -50,6 +50,7 @@ def run_API_request(operation, description="an unknown web query"):
     if TIME_BETWEEN_OPS != DEFAULT_TIME_BETWEEN_OPS and OPS_SINCE_BACKOFF > OPS_TO_RESTORE_BACKOFF:
         TIME_BETWEEN_OPS = TIME_BETWEEN_OPS / 2
         OPS_SINCE_BACKOFF = 0
+        print("DEBUG: Relaxing op time to " + str(TIME_BETWEEN_OPS))
 
     # Run the operation, retrying on exceptions
     result = None
@@ -62,6 +63,7 @@ def run_API_request(operation, description="an unknown web query"):
             OPS_SINCE_BACKOFF = OPS_SINCE_BACKOFF + 1
         except:
             if TIME_BETWEEN_OPS == DEFAULT_TIME_BETWEEN_OPS * MAX_TIME_MULTIPLIER:
+                print("DEBUG: At max op time of " + str(TIME_BETWEEN_OPS))
                 break
             print("Exception returned while attempting " + description + ". Retrying with " + str(TIME_BETWEEN_OPS) + " seconds between requests... ")
             OPS_SINCE_BACKOFF = 0
@@ -241,7 +243,7 @@ def gather_song_features(song: Song):
         # Target song found, break out of loop
         if target_song:
             if user_search_string != "":
-                print("Found song.")
+                print("Found a matching song from your search. ")
             break
 
         # If the initial search didn't match, try search without "feat." in the middle
@@ -252,7 +254,7 @@ def gather_song_features(song: Song):
                 continue
 
         # Song not found, prompt user to modify search query
-        print("No suitable Spotify results found for search \"" + query_string + "\". Type a new search query. Or enter nothing to do a final retry without time requirements. ")
+        print("No suitable Spotify results found for search \"" + query_string + "\". Type a new search query, or enter nothing to do a final retry without requiring a certain length. ")
         user_search_string = input('Search Spotify for: ')
         # User had blank input; disable duration matching
         if len(user_search_string) < 1:

@@ -3,17 +3,17 @@ import os
 from foundation import *
 
 # Launch and auth YouTube Music and Spotify
-print("Launching playlist metadata collector.")
+print("Launching playlist metadata collector. ")
 
 # Check which playlists are already saved
 target_folder = '.'
 saved_playlists, all_songs = load_local_playlists(target_folder)
-print("Loaded " + str(len(saved_playlists.keys())) + " saved playlists.")
+print("Loaded " + str(len(saved_playlists.keys())) + " saved playlists from folder. ")
 
 # Go through each user playlist on YouTube Music
-playlist_limit = int(input("How many of your playlists to load? "))
+playlist_limit = int(input("How many of your playlists to load from YouTube Music? "))
 ytm_playlists = run_API_request(lambda : YTM.get_library_playlists(limit=playlist_limit), "to load YouTube Music library playlists")
-print("Checking your first " + str(playlist_limit) + " YTM playlists. ")
+print("Got " + str(len(ytm_playlists)) + " playlists from YouTube Music. ")
 print("What is the exact spelling of the desired YouTube Music account name or channel ID? Check by opening one of the playlists on music.youtube.com and looking at the author name directly below the playlist name. ")
 user_name = input("Name/ID: ")
 for candidate_playlist in ytm_playlists:
@@ -74,6 +74,9 @@ for candidate_playlist in ytm_playlists:
         pickle.dump(local_playlist, playlist_file)
         playlist_file.close()
         print("Done processing playlist \"" + local_playlist.name + "\"; saved to folder. ")
+
+        if not get_user_bool("Want to continue downloading? "):
+            continue
 
 print("Done processing returned playlists; saving song database and exiting. ")
 # Save song database, moving old copy to backup location in case save is interrupted
