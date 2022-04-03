@@ -37,15 +37,39 @@ SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="CLIENT_ID",
                                                redirect_uri="http://www.example.com/",
                                                scope="user-library-read"))
 
-# TODO: support backing off query time
 LAST_OP_TIME = time.time()
-def pace_ops():
-    """Blocks until it's safe to send another API query (to avoid throttling)"""
-    global LAST_OP_TIME
-    remaining_time = (LAST_OP_TIME + 1.2) - time.time()
-    if remaining_time > 0:
-        time.sleep(remaining_time)
+TIME_BETWEEN_OPS = DEFAULT_TIME_BETWEEN_OPS = 1
+OPS_SINCE_BACKOFF = 0
+OPS_TO_RESTORE_BACKOFF = 20
+MAX_TIME_MULTIPLIER = 32
+def run_API_request(operation, description="an unknown web query"):
+    """Runs any lambda, enforcing a time between each call, and returns its result."""
+    global LAST_OP_TIME, TIME_BETWEEN_OPS, OPS_SINCE_BACKOFF, DEFAULT_TIME_BETWEEN_OPS, OPS_TO_RESTORE_BACKOFF, MAX_TIME_MULTIPLIER
+
+    # Check if it's safe to try faster requests
+    if TIME_BETWEEN_OPS != DEFAULT_TIME_BETWEEN_OPS and OPS_SINCE_BACKOFF > OPS_TO_RESTORE_BACKOFF:
+        TIME_BETWEEN_OPS = TIME_BETWEEN_OPS / 2
+        OPS_SINCE_BACKOFF = 0
+
+    # Run the operation, retrying on exceptions
+    result = None
+    while result is None:
+        try:
+            remaining_time = (LAST_OP_TIME + TIME_BETWEEN_OPS) - time.time()
+            if remaining_time > 0:
+                time.sleep(remaining_time)
+            result = operation()
+            OPS_SINCE_BACKOFF = OPS_SINCE_BACKOFF + 1
+        except:
+            if TIME_BETWEEN_OPS == DEFAULT_TIME_BETWEEN_OPS * MAX_TIME_MULTIPLIER:
+                break
+            print("Exception returned while attempting " + description + ". Retrying with " + str(TIME_BETWEEN_OPS) + " seconds between requests... ")
+            OPS_SINCE_BACKOFF = 0
+            TIME_BETWEEN_OPS = TIME_BETWEEN_OPS * 2
+    if result is None:
+        print("Exceeded retries. Check your credentials and internet connection. Continuing... ")
     LAST_OP_TIME = time.time()
+    return result
 
 """
 Global classes
@@ -156,20 +180,19 @@ def get_user_bool(message):
     """Prompts the user to input 'y' or 'n' with a message"""
     user_input = ""
     while user_input != 'y' and user_input != 'n':
-        user_input = input(message + "(y/n)")
+        user_input = input(message + "(y/n): ")
     return user_input == 'y'
 
 def download_metadata(id):
     """Takes a YouTube song ID and gets basic metadata (using a different API than the playlist downloaded)."""
-    pace_ops()
-    song_data = YTM.get_song(id)['videoDetails']
+    song_data = run_API_request(lambda : YTM.get_song(id)['videoDetails'], "to look up metadata for YouTube song " + id)
     local_song = Song()
     local_song.yt_id = id
     local_song.artist = song_data['author']
     local_song.name = song_data['title']
     local_song.duration_s = int(song_data['lengthSeconds'])
     if id != song_data['videoId']:
-        print("Song \"" + local_song.name + "\" returned a different id (" + local_song.yt_id + ") than the one used to look it up (" + id + ").  Ignoring the returned id.  ")
+        print("Song \"" + local_song.name + "\" returned a different id (" + local_song.yt_id + ") than the one used to look it up (" + id + "). Ignoring the returned id. ")
     return local_song
 
 def gather_song_features(song: Song):
@@ -178,18 +201,17 @@ def gather_song_features(song: Song):
     # Make an initial search term
     initial_query_string = ""
     if song.name is None or song.artist is None:
-        print("Not sure how to search Spotify for song \"" + str(song.name) + "\" (YouTube ID " + str(song.yt_id) + ").")
-        user_search_string = input('Search Spotify for: ')
+        print("Not sure how to search Spotify for song \"" + str(song.name) + "\" (YouTube ID " + str(song.yt_id) + "). ")
+        initial_query_string = input('Search Spotify for: ')
     else:
         initial_query_string = query_string = song.name + " " + song.artist
 
     # Allow retrying search until results found (or search options are exhausted)
     strict_time_matching = True
     target_song = None
+    user_search_string = "" 
     while True:
-        pace_ops()
-        user_search_string = ""
-        search_results = SP.search(query_string, type='track')
+        search_results = run_API_request(lambda : SP.search(query_string, type='track'), "a Spotify search")
 
         # Results were returned, check them
         if search_results and len(search_results['tracks']['items']) > 0:
@@ -205,7 +227,7 @@ def gather_song_features(song: Song):
             else:
                 candidate_song = search_results['tracks']['items'][0]
                 time_difference_s = candidate_song['duration_ms']/1000 - song.duration_s
-                print("Choosing first search result, which is " + str(int(abs(time_difference_s))) + " seconds " + ("longer" if time_difference_s > 0 else "shorter") + ".")
+                print("Choosing the first search result, which is " + str(int(abs(time_difference_s))) + " seconds " + ("longer" if time_difference_s > 0 else "shorter") + ". ")
                 target_song = search_results['tracks']['items'][0]
                 song.metadata_needs_review = True
                 break
@@ -216,7 +238,7 @@ def gather_song_features(song: Song):
 
         # Target song found, break out of loop
         if target_song:
-            if user_search_string is not None:
+            if user_search_string != "":
                 print("Found song.")
             break
 
@@ -228,7 +250,7 @@ def gather_song_features(song: Song):
                 continue
 
         # Song not found, prompt user to modify search query
-        print("No suitable Spotify results found for search \"" + query_string + "\".  Type a new search query.  Or, enter nothing to retry with loose time requirements, then program will give up if there are still no matches.")
+        print("No suitable Spotify results found for search \"" + query_string + "\". Type a new search query. Or enter nothing to do a final retry without time requirements. ")
         user_search_string = input('Search Spotify for: ')
         # User had blank input; disable duration matching
         if len(user_search_string) < 1:
@@ -238,7 +260,7 @@ def gather_song_features(song: Song):
 
     # No song was found, can't look up data.  Warn user and flag song.  
     if target_song is None:
-        print("Could not get Spotify info for \"" + initial_query_string + "\".  The rater-application will prompt you for info.")
+        print("Could not get Spotify info for \"" + initial_query_string + "\". The rater-application will prompt you for info. ")
         song.metadata_needs_review = True
 
     # Song was found.  Look up its "features" and process them before saving song to playlist.
@@ -247,9 +269,7 @@ def gather_song_features(song: Song):
         # YTM doesn't provide album when retrieving individual song info, so fill from Spotify
         if song.album is None:
             song.album = target_song['album']['name']
-        pace_ops()
-        # TODO: LD detect HTTP error, log error, and retry.  
-        features = SP.audio_features(tracks=[song.spotify_id])[0]
+        features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify data for track ID + " + song.spotify_id)
 
         song.bpm = features['tempo']
 
@@ -288,12 +308,13 @@ def load_local_playlists(path = '.'):
     """Loads local playlist files into a dict (keyed by YT id) and returns it.  
     Also returns dict of songs by YT id.  Takes optional path argument or just seaches current directory."""
 
-    print("Loading songs database and playlist files from \"" + path + "\".  You may be prompted to correct errors.  ")
+    print("Loading songs database and playlist files from \"" + path + "\". You may be prompted to correct errors. ")
 
     # Load songs db, checking for backup in case save was interrupted
+    # TODO: are songs being detected?
     all_songs = {}
     if os.path.exists(SONG_DB_FILE + '.bak'):
-        if get_user_bool("Songs database backup detected; last save may have failed.  Replace the primary copy with the backup?  "):
+        if get_user_bool("Songs database backup detected; last save may have failed. Replace the primary copy with the backup? "):
             os.rename(SONG_DB_FILE + '.bak', SONG_DB_FILE)
         else:
             os.remove(SONG_DB_FILE + '.bak')
@@ -317,10 +338,10 @@ def load_local_playlists(path = '.'):
             if song_id not in all_songs:
                 # Print update every 10 retrievals since they take a while
                 if missing_metadata_count % 10 == 9:
-                    print("Correcting metadata for " + str(missing_metadata_count + 1) + "th song.  ")
+                    print("Correcting metadata for " + str(missing_metadata_count + 1) + "th song. ")
                 all_songs[song_id] = gather_song_features(download_metadata(song_id))
                 missing_metadata_count = missing_metadata_count + 1
         if missing_metadata_count > 0:
-            print("Downloaded " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\".  Note that album titles could not be loaded.")
+            print("Downloaded " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\". Note that album titles could not be loaded. ")
 
     return saved_playlists, all_songs
