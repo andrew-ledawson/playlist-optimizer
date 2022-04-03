@@ -37,11 +37,12 @@ SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="CLIENT_ID",
                                                redirect_uri="http://www.example.com/",
                                                scope="user-library-read"))
 
+# TODO: support backing off query time
 LAST_OP_TIME = time.time()
 def pace_ops():
-    """Verifies when last query was sent and waits until it's safe to send another"""
+    """Blocks until it's safe to send another API query (to avoid throttling)"""
     global LAST_OP_TIME
-    remaining_time = (LAST_OP_TIME + 1) - time.time()
+    remaining_time = (LAST_OP_TIME + 1.2) - time.time()
     if remaining_time > 0:
         time.sleep(remaining_time)
     LAST_OP_TIME = time.time()
@@ -77,7 +78,7 @@ class Song:
     # Partial download: https://www.reddit.com/r/youtubedl/wiki/howdoidownloadpartsofavideo
     # YouTube DASH stream formats: https://gist.github.com/AgentOak/34d47c65b1d28829bb17c24c04a0096f
     user_ratings = {}
-    owning_playlists = []
+    #owning_playlists = []
 
     def __lt__(self, other) -> bool:
         # Ensure other object is a Song
@@ -114,7 +115,7 @@ class Song:
         # Priority five: Rated with as many current keys as possible
         def get_ratings_count(target_ratings_dict):
             ratings_count = 0
-            for rating_name in USER_RATINGS.keys:
+            for rating_name in USER_RATINGS:
                 if rating_name in target_ratings_dict and target_ratings_dict[rating_name] is not None:
                     ratings_count = ratings_count + 1
             return ratings_count
@@ -128,13 +129,13 @@ class Song:
         # Check all basic fields (i.e. all fields with a few exceptions)
         basic_fields = dir(Song)
         basic_fields.remove('user_ratings')
-        basic_fields.remove('owning_playlists')
+        #basic_fields.remove('owning_playlists')
         for member_name in basic_fields:
             if getattr(self, member_name) != getattr(other, member_name):
                 return False
     
         # Check user ratings, ignoring deprecated ratings
-        for rating_name in USER_RATINGS.keys:
+        for rating_name in USER_RATINGS:
             if (rating_name in self.user_ratings != rating_name in other.user_ratings) or (self.user_ratings[rating_name] != other.user_ratings[rating_name]):
                 return False
 
@@ -142,10 +143,10 @@ class Song:
         return True
 
     # Owning playlists is an instance-dependent variable that should not be pickled
-    def __getstate__(self):
+    """def __getstate__(self):
         state = self.__dict__.copy()
         state['owning_playlists'] = []
-        return state
+        return state"""
 
 """
 Global funtions
@@ -159,25 +160,25 @@ def get_user_bool(message):
     return user_input == 'y'
 
 def download_metadata(id):
-    """Takes a YouTube song ID and gets basic metadata."""
+    """Takes a YouTube song ID and gets basic metadata (using a different API than the playlist downloaded)."""
+    pace_ops()
     song_data = YTM.get_song(id)['videoDetails']
-    local_song = Song
+    local_song = Song()
     local_song.yt_id = id
     local_song.artist = song_data['author']
     local_song.name = song_data['title']
     local_song.duration_s = int(song_data['lengthSeconds'])
-    local_song.yt_id = song_data['videoId']
-    if id != local_song.yt_id:
+    if id != song_data['videoId']:
         print("Song \"" + local_song.name + "\" returned a different id (" + local_song.yt_id + ") than the one used to look it up (" + id + ").  Ignoring the returned id.  ")
     return local_song
 
-def gather_song_metadata(song: Song):
+def gather_song_features(song: Song):
     """Takes a Song with basic metadata and uses Spotify Track Features API to fill in extended musical metadata"""
 
     # Make an initial search term
     initial_query_string = ""
     if song.name is None or song.artist is None:
-        print("Not sure how to search Spotify for song \"" + str(song.name) "\" (YouTube ID " + str(song.yt_id) + ").")
+        print("Not sure how to search Spotify for song \"" + str(song.name) + "\" (YouTube ID " + str(song.yt_id) + ").")
         user_search_string = input('Search Spotify for: ')
     else:
         initial_query_string = query_string = song.name + " " + song.artist
@@ -187,6 +188,7 @@ def gather_song_metadata(song: Song):
     target_song = None
     while True:
         pace_ops()
+        user_search_string = ""
         search_results = SP.search(query_string, type='track')
 
         # Results were returned, check them
@@ -203,7 +205,7 @@ def gather_song_metadata(song: Song):
             else:
                 candidate_song = search_results['tracks']['items'][0]
                 time_difference_s = candidate_song['duration_ms']/1000 - song.duration_s
-                print("Choosing first search result, which is " + str(abs(time_difference_s)) + " seconds " + ("longer" if time_difference_s > 0 else "shorter") + ".")
+                print("Choosing first search result, which is " + str(int(abs(time_difference_s))) + " seconds " + ("longer" if time_difference_s > 0 else "shorter") + ".")
                 target_song = search_results['tracks']['items'][0]
                 song.metadata_needs_review = True
                 break
@@ -214,6 +216,8 @@ def gather_song_metadata(song: Song):
 
         # Target song found, break out of loop
         if target_song:
+            if user_search_string is not None:
+                print("Found song.")
             break
 
         # If the initial search didn't match, try search without "feat." in the middle
@@ -224,7 +228,7 @@ def gather_song_metadata(song: Song):
                 continue
 
         # Song not found, prompt user to modify search query
-        print("No suitable Spotify results found for search \"" + query_string + "\".  Type a new search query, or enter nothing to do a loose search and give up if there are still no matches.")
+        print("No suitable Spotify results found for search \"" + query_string + "\".  Type a new search query.  Or, enter nothing to retry with loose time requirements, then program will give up if there are still no matches.")
         user_search_string = input('Search Spotify for: ')
         # User had blank input; disable duration matching
         if len(user_search_string) < 1:
@@ -234,13 +238,17 @@ def gather_song_metadata(song: Song):
 
     # No song was found, can't look up data.  Warn user and flag song.  
     if target_song is None:
-        print("Could not get Spotify info for " + initial_query_string + ".  The rater-application will prompt you for info.")
+        print("Could not get Spotify info for \"" + initial_query_string + "\".  The rater-application will prompt you for info.")
         song.metadata_needs_review = True
 
     # Song was found.  Look up its "features" and process them before saving song to playlist.
     else:
         song.spotify_id = target_song['id']
+        # YTM doesn't provide album when retrieving individual song info, so fill from Spotify
+        if song.album is None:
+            song.album = target_song['album']['name']
         pace_ops()
+        # TODO: LD detect HTTP error, log error, and retry.  
         features = SP.audio_features(tracks=[song.spotify_id])[0]
 
         song.bpm = features['tempo']
@@ -280,7 +288,7 @@ def load_local_playlists(path = '.'):
     """Loads local playlist files into a dict (keyed by YT id) and returns it.  
     Also returns dict of songs by YT id.  Takes optional path argument or just seaches current directory."""
 
-    print("Loading songs database and playlist files from " + path + ".  You may be prompted to correct errors.  ")
+    print("Loading songs database and playlist files from \"" + path + "\".  You may be prompted to correct errors.  ")
 
     # Load songs db, checking for backup in case save was interrupted
     all_songs = {}
@@ -294,9 +302,10 @@ def load_local_playlists(path = '.'):
         songs_file.close()
 
     # Load playlist files
-    playlist_files = glob.glob(PLAYLIST_FILE_PREFIX + '*' + PLAYLIST_FILE_EXTENSION, dir_fd=glob.glob(path))
+    playlist_files = glob.glob(PLAYLIST_FILE_PREFIX + '*' + PLAYLIST_FILE_EXTENSION, dir_fd=glob.glob(path)[0])
     saved_playlists = {}
     for playlist_file_name in playlist_files:
+        playlist = Song()
         playlist_file = open(playlist_file_name, "rb")
         playlist = pickle.load(playlist_file)
         playlist_file.close()
@@ -306,13 +315,12 @@ def load_local_playlists(path = '.'):
         missing_metadata_count = 0
         for song_id in playlist.songs_ids:
             if song_id not in all_songs:
+                # Print update every 10 retrievals since they take a while
+                if missing_metadata_count % 10 == 9:
+                    print("Correcting metadata for " + str(missing_metadata_count + 1) + "th song.  ")
+                all_songs[song_id] = gather_song_features(download_metadata(song_id))
                 missing_metadata_count = missing_metadata_count + 1
-                if missing_metadata_count % 10 == 0:
-                    print("Correcting metadata for " + str(missing_metadata_count) + "th song.  ")
-                missing_song = download_metadata(song_id)
-                gather_song_metadata(missing_song)
-                all_songs[song_id] = missing_song
         if missing_metadata_count > 0:
-            print("Downloaded " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\".  ")
+            print("Downloaded " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\".  Note that album titles could not be loaded.")
 
     return saved_playlists, all_songs
