@@ -22,7 +22,7 @@ for candidate_playlist in ytm_playlists:
     local_playlist.yt_id = candidate_playlist['playlistId']
     local_playlist_author_name = candidate_playlist.get('author', [{}])[0].get('name', '')
     local_playlist_author_id =  candidate_playlist.get('author', [{}])[0].get('id', '')
-    local_playlist.song_ids = []
+    local_playlist.song_ids = list()
 
     # Omit playlists by other users or YTM themselves
     if local_playlist_author_name == user_name or local_playlist_author_id == user_name:

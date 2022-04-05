@@ -11,7 +11,7 @@ print("Enter a playlist number to rate, or enter nothing to rate all songs in da
 for number, playlist in enumerate(list(saved_playlists.values())):
     print(str(number + 1) + ": " + playlist.name)
 
-selected_song_ids = []
+selected_song_ids = list()
 selection = input("Playlist: ")
 if selection == "":
     selected_song_ids = all_songs.keys()

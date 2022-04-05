@@ -32,7 +32,7 @@ MIN_PYTHON = (3, 6)
 if sys.version_info < MIN_PYTHON:
     sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
 else:
-    print("Starting a playlist optimizer utility")
+    print("Starting playlist optimizer core functions")
 
 YTM = YTMusic('headers_auth.json')
 SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="CLIENT_ID",
@@ -106,8 +106,8 @@ class Song:
     # Partial download: https://www.reddit.com/r/youtubedl/wiki/downloadingytsegments
     # Partial download: https://www.reddit.com/r/youtubedl/wiki/howdoidownloadpartsofavideo
     # YouTube DASH stream formats: https://gist.github.com/AgentOak/34d47c65b1d28829bb17c24c04a0096f
-    user_ratings = {}
-    #owning_playlists = []
+    user_ratings = dict()
+    #owning_playlists = list()
 
     def has_latest_ratings(self):
         global USER_RATINGS
@@ -181,7 +181,7 @@ class Song:
     # Owning playlists is an instance-dependent variable that should not be pickled
     """def __getstate__(self):
         state = self.__dict__.copy()
-        state['owning_playlists'] = []
+        state['owning_playlists'] = list()
         return state"""
 
 """
@@ -329,7 +329,7 @@ def load_local_playlists(path = '.') -> tuple[dict[str, Playlist], dict[str, Son
     print("Loading songs database and playlist files from folder \"" + path + "\". You may be prompted to correct errors. ")
 
     # Load songs db, checking for backup in case save was interrupted
-    all_songs = {}
+    all_songs = dict()
     if os.path.exists(SONG_DB_FILE + '.bak'):
         if get_user_bool("Songs database backup detected; last save may have failed. Replace the primary copy with the backup? "):
             os.rename(SONG_DB_FILE + '.bak', SONG_DB_FILE)
@@ -342,7 +342,7 @@ def load_local_playlists(path = '.') -> tuple[dict[str, Playlist], dict[str, Son
 
     # Load playlist files
     playlist_files = glob.glob(PLAYLIST_FILE_PREFIX + '*' + PLAYLIST_FILE_EXTENSION, dir_fd=glob.glob(path)[0])
-    saved_playlists = {}
+    saved_playlists = dict()
     for playlist_file_name in playlist_files:
         playlist = Song()
         playlist_file = open(playlist_file_name, "rb")
