@@ -9,44 +9,54 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
 """
-Global variables and init scripts
+Global variables and init functions
 """
 
-# A dictionary of user-ratable traits for each song, where each key is the name of a category
-# and each value is its explanation.  Capitalize correctly for UI display.  
+# A dictionary of user-ratable traits for each song, where each key is a trait/category
+# and each value is an explanation.  Capitalize strings correctly for UI display.  
 # Can be updated by adding new rating fields and/or moving out deprecated fields.  
+# Ratings are presumed to go from +2 (strongly matches category) to -2 (extreme opposite of category)
 USER_RATINGS = {'Positivity' : 'Hopeful and optimistic, or regretful and pessimistic.',
                 'Drive' : 'Driving and forceful, or unhurried and gentle.',
                 'Presence' : 'Captivating and focused, or detached and distant.',
                 'Complexity' : 'Crowded and busy, or simple and manageable.'}
 
 # Deprecated ratings can be moved here so program will prompt users to re-rate accordingly
+# TODO: Add support
 DEPRECATED_RATINGS = {}
 
+# Maximum different in time between YouTube Music and Spotify.
+# Keep in mind that YouTube music durations are in seconds and Spotify is accurate to milliseconds.  
+MAX_SONG_TIME_DIFFERENCE = 2
+
+# File names and extensions
 PLAYLIST_FILE_PREFIX = 'playlist_'
 PLAYLIST_FILE_EXTENSION = '.ytp'
 SONG_DB_FILE = 'songs.yts'
 
-# Check Python version on init
+# Check Python version on init because this uses ordered dicts
 MIN_PYTHON = (3, 6)
 if sys.version_info < MIN_PYTHON:
     sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
 else:
     print("Starting playlist optimizer core functions")
 
+# Init YouTube Music and Spotify API libraries
 YTM = YTMusic('headers_auth.json')
 SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="CLIENT_ID",
                                                client_secret="CLIENT_SECRET",
                                                redirect_uri="http://www.example.com/",
                                                scope="user-library-read"))
 
+# Variables and function to ensure API calls avoid rate limiting
 LAST_OP_TIME = time.time()
 TIME_BETWEEN_OPS = DEFAULT_TIME_BETWEEN_OPS = 1
 OPS_SINCE_BACKOFF = 0
 OPS_TO_RESTORE_BACKOFF = 20
 MAX_TIME_MULTIPLIER = 32
 def run_API_request(operation : Callable, description="an unknown web query"):
-    """Runs any lambda, enforcing a time between each call, and returns its result."""
+    """Runs a lamba (presumably containing an API call) and returns its result.
+       Keeps a rate limit to avoid getting flagged/banned and backs on upon exceptions."""
     global LAST_OP_TIME, TIME_BETWEEN_OPS, OPS_SINCE_BACKOFF, DEFAULT_TIME_BETWEEN_OPS, OPS_TO_RESTORE_BACKOFF, MAX_TIME_MULTIPLIER
 
     # Check if it's safe to try faster requests
@@ -65,7 +75,6 @@ def run_API_request(operation : Callable, description="an unknown web query"):
             OPS_SINCE_BACKOFF = OPS_SINCE_BACKOFF + 1
         except:
             if TIME_BETWEEN_OPS == DEFAULT_TIME_BETWEEN_OPS * MAX_TIME_MULTIPLIER:
-                print("DEBUG: At max op time of " + str(TIME_BETWEEN_OPS))
                 break
             OPS_SINCE_BACKOFF = 0
             print("Error found while attempting " + description + ". Temporarily spacing out requests by " + str(TIME_BETWEEN_OPS) + " seconds... ")
@@ -74,19 +83,19 @@ def run_API_request(operation : Callable, description="an unknown web query"):
     LAST_OP_TIME = time.time()
     return result
 
-MAX_TIME_DIFFERENCE = 2
-
 """
 Global classes
 """
 
 class Playlist:
+    """A YouTube Music playlist containing songs"""
     name = None
-    song_ids = None
+    song_ids = None # list of strs
     yt_id = None
 
 @total_ordering
 class Song:
+    """A song (presumably shared between YouTube Music and Spotify)"""
     album = None
     artist = None
     name = None
@@ -101,7 +110,6 @@ class Song:
     camelot_is_minor = None
     bpm = None
 
-    # A dict of user ratings (dict values) (+2 to -2) for each custom trait (dict keys)
     # TODO: Create a rating module that uses youtube-dl/yt-dlp and external player like ffmpeg to play portion/offset
     # Partial download: https://www.reddit.com/r/youtubedl/wiki/downloadingytsegments
     # Partial download: https://www.reddit.com/r/youtubedl/wiki/howdoidownloadpartsofavideo
@@ -189,14 +197,14 @@ Global funtions
 """
 
 def get_user_bool(message : str) -> bool:
-    """Prompts the user to input 'y' or 'n' with a message"""
+    """Prompts the user to respond to a message with 'y' or 'n'"""
     user_input = ""
     while user_input != 'y' and user_input != 'n':
         user_input = input(message + "(y/n): ")
     return user_input == 'y'
 
 def download_metadata(id : str) -> Song:
-    """Takes a YouTube song ID and gets basic metadata (using a different API than the playlist downloaded)."""
+    """Takes a YouTube song ID and gets basic metadata (using a different call than the playlist contents endpoint)."""
     song_data = run_API_request(lambda : YTM.get_song(id)['videoDetails'], "to look up metadata for YouTube song " + id)
     local_song = Song()
     local_song.yt_id = id
@@ -230,8 +238,8 @@ def gather_song_features(song : Song) -> Song:
             # Check that the Spotify song is about the same duration as the YTM version
             if strict_time_matching:
                 for candidate_song in search_results['tracks']['items']:
-                    time_difference_s = candidate_song['duration_ms']/1000 - song.duration_s
-                    if abs(time_difference_s) <= MAX_TIME_DIFFERENCE:
+                    time_difference_s = (float(candidate_song['duration_ms'])/1000) - float(song.duration_s)
+                    if abs(time_difference_s) <= MAX_SONG_TIME_DIFFERENCE:
                         target_song = candidate_song
                         song.metadata_needs_review = False
                         break
@@ -244,17 +252,18 @@ def gather_song_features(song : Song) -> Song:
                 song.metadata_needs_review = True
                 break
 
-        # No song found even with loose time matching, abort
+        # No song found even with loose time matching, stop searching
         elif not strict_time_matching:
             break
 
-        # Target song found, break out of loop
+        # Target song found, stop searching
         if target_song:
             if user_search_string != "":
                 print("Found a matching song. ")
             break
 
-        # If the initial search didn't match, try search without "feat." in the middle
+        # If the initial search didn't match, try search without "feat." in the track name
+        # because Spotify doesn't seem to like that
         if strict_time_matching and query_string == initial_query_string:
             query_string = re.sub('( \(\s*feat.+\))', '', query_string, flags=re.IGNORECASE)
             # There was a "feat" to reove in the search string, so we'll retry the search
@@ -270,7 +279,7 @@ def gather_song_features(song : Song) -> Song:
         else:
             query_string = user_search_string
 
-    # No song was found, can't look up data.  Warn user and flag song.  
+    # No song was found; can't look up data.  Warn user and flag song.  
     if target_song is None:
         print("Search still had no results; leaving song metadata empty. ")
         song.metadata_needs_review = True
@@ -278,12 +287,12 @@ def gather_song_features(song : Song) -> Song:
     # Song was found.  Look up its "features" and process them before saving song to playlist.
     else:
         song.spotify_id = target_song['id']
-        # YTM doesn't provide album when retrieving individual song info, so fill from Spotify
+        # Fill album name from Spotify if YTM alt endpoint was used
         if song.album is None:
             song.album = target_song['album']['name']
-        features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify data for track ID + " + song.spotify_id)
+        features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify data for track ID " + song.spotify_id)
 
-        # Make BPM a number between 90 and 180
+        # Keep BPM consistent between 90 and 180
         provisional_bpm = features['tempo']
         while provisional_bpm < 90:
             provisional_bpm = provisional_bpm * 2
@@ -291,8 +300,8 @@ def gather_song_features(song : Song) -> Song:
             provisional_bpm = provisional_bpm / 2
         song.bpm = provisional_bpm
 
-        # Validate and convert Spotify pitch class numbers mapped to camelot wheel numbers 
-        # Camelot position numbers are in tuple of (position for major, position for minor)
+        # Validate Spotify pitch class then convert to camelot wheel position number 
+        # Camelot position numbers are in tuples (position for major key, position for minor key)
         camelot_lookup = {
             0: (8, 5),
             1: (3, 12),
@@ -322,6 +331,7 @@ def gather_song_features(song : Song) -> Song:
 
     return song
 
+# TODO: Check db for songs that do not belong to a playlist and offer to delete them
 def load_local_playlists(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
     """Loads local playlist files into a dict (keyed by YT id) and returns it.  
     Also returns dict of songs by YT id.  Takes optional path argument or just seaches current directory."""
@@ -362,13 +372,13 @@ def load_local_playlists(path = '.') -> tuple[dict[str, Playlist], dict[str, Son
                 all_songs[song_id] = gather_song_features(download_metadata(song_id))
                 missing_metadata_count = missing_metadata_count + 1
         if missing_metadata_count > 0:
-            print("Downloaded " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\". Note that album titles could not be loaded. ")
+            print("Updated " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\". Note that album names could not be loaded. ")
 
     print("Loaded " + str(len(saved_playlists.keys())) + " saved playlists and " + str(len(all_songs.keys())) + " songs. ")
     return saved_playlists, all_songs
 
 def write_song_db(all_songs : dict[str, Song]):
-    # Save song database, moving old copy to backup location in case save is interrupted
+    # Save song database, moving old copy to backup location in case saving is interrupted
     if os.path.exists(SONG_DB_FILE):
         os.rename(SONG_DB_FILE, SONG_DB_FILE + '.bak')
     songs_file = open(SONG_DB_FILE, "wb")

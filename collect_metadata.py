@@ -7,8 +7,7 @@ print("Playlist metadata collector")
 print("Gets playlists by a particular user from your YouTube Music library and downloads information on the songs.")
 
 # Check which playlists are already saved
-target_folder = '.'
-saved_playlists, all_songs = load_local_playlists(target_folder)
+saved_playlists, all_songs = load_local_playlists()
 
 # Go through each user playlist on YouTube Music
 playlist_limit = int(input("How many of your playlists to load from YouTube Music? "))
@@ -69,7 +68,7 @@ for candidate_playlist in ytm_playlists:
             local_playlist.song_ids.append(local_song.yt_id)
 
         # Store playlist as a file
-        playlist_file = open(target_folder + "/" + PLAYLIST_FILE_PREFIX + local_playlist.yt_id + PLAYLIST_FILE_EXTENSION, "wb")
+        playlist_file = open('./' + PLAYLIST_FILE_PREFIX + local_playlist.yt_id + PLAYLIST_FILE_EXTENSION, "wb")
         pickle.dump(local_playlist, playlist_file)
         playlist_file.close()
         print("Done processing playlist \"" + local_playlist.name + "\"; saved to folder. ")
@@ -77,6 +76,5 @@ for candidate_playlist in ytm_playlists:
         if not get_user_bool("Want to continue checking additional playlists? "):
             break
 
-# TODO: Check db for songs that do not belong to a playlist and offer to delete them
-print("Done processing returned playlists; saving song database and exiting. ")
+print("Done processing playlists; saving song database and exiting. ")
 write_song_db(all_songs)

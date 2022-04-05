@@ -1,16 +1,15 @@
 from foundation import *
 
 print("Song rater")
-print("Allows rating songs by certain traits while playing a sample of the song. Enter \"e\" in a rating prompt to save and exit. ")
-print("Make sure the contents of an FFMPEG release are in a folder named \"ffmpeg\" (so that the bin/ folder is within it) and yt-dlp.exe is in the same folder as this script. ")
+print("Allows rating songs by certain traits (+2 to -2) while playing a sample of the song. Enter \"e\" in a rating prompt to save and exit. ")
+print("Make sure that the contents of an FFMPEG release are in a folder named \"ffmpeg\" (so that the bin/ folder is within it) and that yt-dlp.exe is in the same folder as this script. ")
 
-# Load songs and playlists
-target_folder = '.'
-saved_playlists, all_songs = load_local_playlists(target_folder)
+saved_playlists, all_songs = load_local_playlists()
+
+# Prompt user to select playlist
 print("Enter a playlist number to rate, or enter nothing to rate all songs in database. ")
 for number, playlist in enumerate(list(saved_playlists.values())):
     print(str(number + 1) + ": " + playlist.name)
-
 selected_song_ids = list()
 selection = input("Playlist: ")
 if selection == "":
@@ -18,10 +17,6 @@ if selection == "":
 else:
     selected_playlist = list(saved_playlists.values())[int(selection) - 1]
     selected_song_ids = selected_playlist.song_ids
-
-print("Rate songs from -2 to 2 for the following traits: ")
-for trait, description in USER_RATINGS.items():
-    print(trait + ": " + description)
 
 print("What input volume (0-100) should song samples be played at? ")
 volume = None
@@ -43,12 +38,30 @@ while time_offset is None:
     except:
         print("Invalid time. Input some number, starting at 0. ")
 
-for song_id in selected_song_ids:
+def print_ratings_traits():
+    print("Rate songs from -2 to 2 for the following traits: ")
+    for trait, description in USER_RATINGS.items():
+        print(trait + ": " + description)
+
+print_ratings_traits()
+
+print("How often to print this list of ratings traits? Enter '0' to only print at start. ")
+reminder_frequency = None
+while reminder_frequency is None:
+    try:
+        reminder_frequency_input = int(input("Songs between ratings reminders: "))
+        assert reminder_frequency >= 0
+        reminder_frequency = reminder_frequency_input
+    except:
+        print("Invalid time. Input some number, starting at 0. ")
+print_ratings_traits()
+
+# For each song, prompt user to rate on each trait
+for index, song_id in enumerate(selected_song_ids):
     should_exit = False
     target_song = all_songs[song_id]
     print("\"" + target_song.name + "\" by \"" + target_song.artist + "\"")
     # TODO: invoke youtube-dl then ffmpeg to play preview
-    # TODO: why does entering a rating apply it to every song?
     target_ratings = target_song.user_ratings
     for trait in USER_RATINGS:
         while trait not in target_ratings or target_ratings[trait] is None:
@@ -66,7 +79,6 @@ for song_id in selected_song_ids:
             break
     if should_exit:
         break
-    # TODO: Verify references are all updated before overwriting db
 
 print("Done rating; saving song database and exiting. ")
 write_song_db(all_songs)
