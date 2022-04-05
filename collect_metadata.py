@@ -57,7 +57,7 @@ for candidate_playlist in ytm_playlists:
                     time_strings = playlist_song['duration'].split(':')
                     local_song.duration_s = 60 * int(time_strings[0]) + int(time_strings[1])
                 else:
-                    # For some godforsaken reason, YTM won't return duration once in a while
+                    # Some YTM songs don't include duration in the playlist response
                     print("Using alternate method to get duration of song \"" + local_song.name + "\". ")
                     alt_lookup_song = download_metadata(local_song.yt_id)
                     local_song.duration_s = alt_lookup_song.duration_s

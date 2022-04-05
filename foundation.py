@@ -22,7 +22,6 @@ USER_RATINGS = {'Positivity' : 'Hopeful and optimistic, or regretful and pessimi
                 'Complexity' : 'Crowded and busy, or simple and manageable.'}
 
 # Deprecated ratings can be moved here so program will prompt users to re-rate accordingly
-# TODO: Add support
 DEPRECATED_RATINGS = {}
 
 # Maximum different in time between YouTube Music and Spotify.
@@ -110,10 +109,6 @@ class Song:
     camelot_is_minor = None
     bpm = None
 
-    # TODO: Create a rating module that uses youtube-dl/yt-dlp and external player like ffmpeg to play portion/offset
-    # Partial download: https://www.reddit.com/r/youtubedl/wiki/downloadingytsegments
-    # Partial download: https://www.reddit.com/r/youtubedl/wiki/howdoidownloadpartsofavideo
-    # YouTube DASH stream formats: https://gist.github.com/AgentOak/34d47c65b1d28829bb17c24c04a0096f
     user_ratings = dict()
     #owning_playlists = list()
 

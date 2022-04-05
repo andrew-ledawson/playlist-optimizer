@@ -46,8 +46,8 @@ def print_ratings_traits():
 
 print_ratings_traits()
 
+# TODO: Don't count fully rated songs against reminder
 print("How often to print this list of ratings traits? Enter '0' to only print at start. ")
-# TODO: implement reminders
 reminder_frequency = None
 while reminder_frequency is None:
     try:
@@ -64,6 +64,10 @@ cookies_file_path = input("Cookies file path: ")"""
 # For each song, prompt user to rate on each trait
 for index, song_id in enumerate(selected_song_ids):
     should_exit = False
+
+    if index + 1 % reminder_frequency == 0:
+        print_ratings_traits()
+
     target_song = all_songs[song_id]
     print("\"" + target_song.name + "\" by \"" + target_song.artist + "\"")
 
@@ -77,6 +81,11 @@ for index, song_id in enumerate(selected_song_ids):
                 player = subprocess.Popen("ffmpeg/bin/ffplay.exe " + format_json['url'] + " -volume " + str(volume) + " -ss " + str(time_offset) + " -nodisp", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
 
     target_ratings = target_song.user_ratings
+    for trait in target_ratings:
+        if trait not in USER_RATINGS:
+            print("Trait \"" + str(trait) + "\" (score " + str(target_ratings[trait]) + ") is no longer used and will be removed. ")
+            if trait in DEPRECATED_RATINGS:
+                print("Trait description: " + str(DEPRECATED_RATINGS[trait]))
     for trait in USER_RATINGS:
         while trait not in target_ratings or target_ratings[trait] is None:
             try:
