@@ -1,3 +1,4 @@
+import json, subprocess
 from foundation import *
 
 print("Song rater")
@@ -46,22 +47,33 @@ def print_ratings_traits():
 print_ratings_traits()
 
 print("How often to print this list of ratings traits? Enter '0' to only print at start. ")
+# TODO: implement reminders
 reminder_frequency = None
 while reminder_frequency is None:
     try:
         reminder_frequency_input = int(input("Songs between ratings reminders: "))
-        assert reminder_frequency >= 0
+        assert reminder_frequency_input >= 0
         reminder_frequency = reminder_frequency_input
     except:
         print("Invalid time. Input some number, starting at 0. ")
 print_ratings_traits()
+
+"""print("Please download a \"Netscape format\" cookies.txt dump of music.youtube.com and give the file path.")
+cookies_file_path = input("Cookies file path: ")"""
 
 # For each song, prompt user to rate on each trait
 for index, song_id in enumerate(selected_song_ids):
     should_exit = False
     target_song = all_songs[song_id]
     print("\"" + target_song.name + "\" by \"" + target_song.artist + "\"")
-    # TODO: invoke youtube-dl then ffmpeg to play preview
+
+    player = None
+    yt_manifes_text = subprocess.check_output("./yt-dlp.exe -j -- " + song_id)
+    yt_manifest = json.loads(yt_manifes_text)
+    for format_json in yt_manifest['formats']:
+        if format_json['format_id'] == "251":
+            player = subprocess.Popen("ffmpeg/bin/ffplay.exe " + format_json['url'] + " -volume " + str(volume) + " -ss " + str(time_offset) + " -nodisp", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+
     target_ratings = target_song.user_ratings
     for trait in USER_RATINGS:
         while trait not in target_ratings or target_ratings[trait] is None:
@@ -77,6 +89,7 @@ for index, song_id in enumerate(selected_song_ids):
                 print("Invalid rating. Enter -2, -1, 0, 1, or 2. ")
         if should_exit:
             break
+    player.terminate()
     if should_exit:
         break
 
