@@ -29,15 +29,15 @@ while volume is None:
     except:
         print("Invalid volume. Input a number 0 up to 100. ")
 
-print("How many seconds into the song should playback start? ")
+print("How many seconds into the song should playback start? Enter -1 to not play song. ")
 time_offset = None
 while time_offset is None:
     try:
         time_offset_input = int(input("Seconds: "))
-        assert time_offset_input >= 0
+        assert time_offset_input >= -1
         time_offset = time_offset_input
     except:
-        print("Invalid time. Input some number, starting at 0. ")
+        print("Invalid time. Input some number, starting at -1. ")
 
 def print_ratings_traits():
     print("Rate songs from -2 to 2 for the following traits: ")
@@ -67,12 +67,14 @@ for index, song_id in enumerate(selected_song_ids):
     target_song = all_songs[song_id]
     print("\"" + target_song.name + "\" by \"" + target_song.artist + "\"")
 
+    # Extract the playback URL for OPUS audio (for DASH video) and play in the background
     player = None
-    yt_manifes_text = subprocess.check_output("./yt-dlp.exe -j -- " + song_id)
-    yt_manifest = json.loads(yt_manifes_text)
-    for format_json in yt_manifest['formats']:
-        if format_json['format_id'] == "251":
-            player = subprocess.Popen("ffmpeg/bin/ffplay.exe " + format_json['url'] + " -volume " + str(volume) + " -ss " + str(time_offset) + " -nodisp", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+    if time_offset >= 0:
+        yt_manifes_text = subprocess.check_output("./yt-dlp.exe -j -- " + song_id)
+        yt_manifest = json.loads(yt_manifes_text)
+        for format_json in yt_manifest['formats']:
+            if format_json['format_id'] == "251":
+                player = subprocess.Popen("ffmpeg/bin/ffplay.exe " + format_json['url'] + " -volume " + str(volume) + " -ss " + str(time_offset) + " -nodisp", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
 
     target_ratings = target_song.user_ratings
     for trait in USER_RATINGS:
@@ -89,7 +91,8 @@ for index, song_id in enumerate(selected_song_ids):
                 print("Invalid rating. Enter -2, -1, 0, 1, or 2. ")
         if should_exit:
             break
-    player.terminate()
+    if player is not None:
+        player.terminate()
     if should_exit:
         break
 
