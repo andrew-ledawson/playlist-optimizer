@@ -15,6 +15,9 @@ ytm_playlists = run_API_request(lambda : YTM.get_library_playlists(limit=playlis
 print("Got " + str(len(ytm_playlists)) + " playlists from YouTube Music. ")
 print("What author's playlists should be downloaded from your YouTube Music Library? Check by opening one of the playlists on music.youtube.com and looking at the author name (directly below the playlist name). ")
 user_name = input("Account name or channel ID: ")
+
+num_playlists_processed = 0
+
 for candidate_playlist in ytm_playlists:
     local_playlist = Playlist()
     local_playlist.name = candidate_playlist['title']
@@ -71,10 +74,11 @@ for candidate_playlist in ytm_playlists:
         playlist_file.close()
         playlists_db[local_playlist.yt_id] = local_playlist
         print("Done processing playlist \"" + local_playlist.name + "\"; saved to folder. ")
+        num_playlists_processed = num_playlists_processed + 1
 
         if not prompt_user_for_bool("Want to continue checking additional playlists? "):
             break
 
-print("Done processing playlists; saving song database and exiting. ")
+print("Processed " + str(num_playlists_processed) + " playlists; saving song database and exiting. ")
 cleanup_songs_db(songs_db, playlists_db)
 write_song_db(songs_db)
