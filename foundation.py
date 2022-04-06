@@ -55,7 +55,7 @@ OPS_TO_RESTORE_BACKOFF = 20
 MAX_TIME_MULTIPLIER = 32
 def run_API_request(operation : Callable, description="an unknown web query"):
     """Runs a lamba (presumably containing an API call) and returns its result.
-       Keeps a rate limit to avoid getting flagged/banned and backs on upon exceptions."""
+       Keeps a rate limit to avoid getting flagged/banned and backs off upon exceptions."""
     global LAST_OP_TIME, TIME_BETWEEN_OPS, OPS_SINCE_BACKOFF, DEFAULT_TIME_BETWEEN_OPS, OPS_TO_RESTORE_BACKOFF, MAX_TIME_MULTIPLIER
 
     # Check if it's safe to try faster requests
@@ -191,14 +191,14 @@ class Song:
 Global funtions
 """
 
-def get_user_bool(message : str) -> bool:
+def prompt_user_for_bool(message : str) -> bool:
     """Prompts the user to respond to a message with 'y' or 'n'"""
     user_input = ""
     while user_input != 'y' and user_input != 'n':
         user_input = input(message + "(y/n): ")
     return user_input == 'y'
 
-def download_metadata(id : str) -> Song:
+def download_metadata_from_YT_id(id : str) -> Song:
     """Takes a YouTube song ID and gets basic metadata (using a different call than the playlist contents endpoint)."""
     song_data = run_API_request(lambda : YTM.get_song(id)['videoDetails'], "to look up metadata for YouTube song " + id)
     local_song = Song()
@@ -210,7 +210,7 @@ def download_metadata(id : str) -> Song:
         print("Song \"" + local_song.name + "\" returned a different id (" + local_song.yt_id + ") than the one used to look it up (" + id + "). Ignoring the returned id. ")
     return local_song
 
-def gather_song_features(song : Song) -> Song:
+def download_song_features(song : Song) -> Song:
     """Takes a Song with basic metadata and uses Spotify Track Features API to fill in extended musical metadata"""
 
     # Make an initial search term
@@ -327,53 +327,53 @@ def gather_song_features(song : Song) -> Song:
     return song
 
 # TODO: Check db for songs that do not belong to a playlist and offer to delete them
-def load_local_playlists(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
+def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
     """Loads local playlist files into a dict (keyed by YT id) and returns it.  
     Also returns dict of songs by YT id.  Takes optional path argument or just seaches current directory."""
 
     print("Loading songs database and playlist files from folder \"" + path + "\". You may be prompted to correct errors. ")
 
     # Load songs db, checking for backup in case save was interrupted
-    all_songs = dict()
+    songs_db = dict()
     if os.path.exists(SONG_DB_FILE + '.bak'):
-        if get_user_bool("Songs database backup detected; last save may have failed. Replace the primary copy with the backup? "):
+        if prompt_user_for_bool("Songs database backup detected; last save may have failed. Replace the primary copy with the backup? "):
             os.rename(SONG_DB_FILE + '.bak', SONG_DB_FILE)
         else:
             os.remove(SONG_DB_FILE + '.bak')
     if os.path.exists(SONG_DB_FILE):
         songs_file = open(SONG_DB_FILE, "rb")
-        all_songs = pickle.load(songs_file)
+        songs_db = pickle.load(songs_file)
         songs_file.close()
 
     # Load playlist files
     playlist_files = glob.glob(PLAYLIST_FILE_PREFIX + '*' + PLAYLIST_FILE_EXTENSION, dir_fd=glob.glob(path)[0])
-    saved_playlists = dict()
+    playlists_db = dict()
     for playlist_file_name in playlist_files:
         playlist = Song()
         playlist_file = open(playlist_file_name, "rb")
         playlist = pickle.load(playlist_file)
         playlist_file.close()
-        saved_playlists[playlist.yt_id] = playlist
+        playlists_db[playlist.yt_id] = playlist
 
         # Check if any songs are not in database and download them
         missing_metadata_count = 0
         if playlist.song_ids is None:
             print("Warning: playlist ID " + playlist.yt_id + " did not finish saving. You may need to delete its file. ")
         for song_id in playlist.song_ids:
-            if song_id not in all_songs:
+            if song_id not in songs_db:
                 # Print update every 10 retrievals since they take a while
                 if missing_metadata_count % 10 == 9:
                     print("Correcting metadata for " + str(missing_metadata_count + 1) + "th song. ")
-                all_songs[song_id] = gather_song_features(download_metadata(song_id))
+                songs_db[song_id] = download_song_features(download_metadata_from_YT_id(song_id))
                 missing_metadata_count = missing_metadata_count + 1
         if missing_metadata_count > 0:
             print("Updated " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\". Note that album names could not be loaded. ")
 
-    print("Loaded " + str(len(saved_playlists.keys())) + " saved playlists and " + str(len(all_songs.keys())) + " songs. ")
-    return saved_playlists, all_songs
+    print("Loaded " + str(len(playlists_db.keys())) + " saved playlists and " + str(len(songs_db.keys())) + " songs. ")
+    return playlists_db, songs_db
 
 def write_song_db(all_songs : dict[str, Song]):
-    # Save song database, moving old copy to backup location in case saving is interrupted
+    """Save song database, moving old copy to backup location in case saving is interrupted."""
     if os.path.exists(SONG_DB_FILE):
         os.rename(SONG_DB_FILE, SONG_DB_FILE + '.bak')
     songs_file = open(SONG_DB_FILE, "wb")
@@ -381,3 +381,28 @@ def write_song_db(all_songs : dict[str, Song]):
     songs_file.close()
     if os.path.exists(SONG_DB_FILE + '.bak'):
         os.remove(SONG_DB_FILE + '.bak')
+
+def cleanup_songs_db(songs_db : dict[str, Song], playlists_db : dict[str, Playlist]):
+    """Checks and offers to remove songs in database not used by any playlist."""
+    unseen_songs = [song_id for song_id in songs_db]
+    for playlist in playlists_db.values():
+        for song_id in playlist.song_ids:
+            try:
+                unseen_songs.remove(song_id)
+            except:
+                pass
+    if len(unseen_songs) > 0:
+        print(str(len(unseen_songs)) + " songs in the database are not used by a playlist. ")
+        if prompt_user_for_bool("Remove them? "):
+            for song_id in unseen_songs:
+                songs_db.pop(song_id)
+    return songs_db
+
+def cleanup_song_traits(song : Song):
+    """WIP: Checks traits, reads them, and offers to remove them."""
+    for trait in song.user_ratings:
+        if trait not in USER_RATINGS:
+            print("Trait \"" + str(trait) + "\" (score " + str(song.user_ratings[trait]) + ") is no longer used and will be removed. ")
+            if trait in DEPRECATED_RATINGS:
+                print("Trait description: " + str(DEPRECATED_RATINGS[trait]))
+            # TODO

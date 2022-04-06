@@ -1,6 +1,6 @@
 from foundation import *
 
-saved_playlists, all_songs = load_local_playlists('.')
+saved_playlists, all_songs = load_data_files('.')
 
 for index, song_a in enumerate(list(all_songs.values())):
     #song_a.user_ratings = dict()

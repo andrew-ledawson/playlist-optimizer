@@ -7,7 +7,7 @@ print("Playlist metadata collector")
 print("Gets playlists by a particular user from your YouTube Music library and downloads information on the songs.")
 
 # Check which playlists are already saved
-saved_playlists, all_songs = load_local_playlists()
+playlists_db, songs_db = load_data_files()
 
 # Go through each user playlist on YouTube Music
 playlist_limit = int(input("How many of your playlists to load from YouTube Music? "))
@@ -25,16 +25,14 @@ for candidate_playlist in ytm_playlists:
 
     # Omit playlists by other users or YTM themselves
     if local_playlist_author_name == user_name or local_playlist_author_id == user_name:
-        print("Found playlist \"" + local_playlist.name + "\".")
+        print("Found playlist \"" + local_playlist.name + "\". ")
 
         # Check if playlist is already downloaded and prompt to update it (i.e. replace it)
-        if local_playlist.yt_id in saved_playlists:
-            if not get_user_bool("Playlist was already downloaded. Update? "):
+        if local_playlist.yt_id in playlists_db:
+            if not prompt_user_for_bool("Playlist was already downloaded. Overwrite? "):
                 continue
-            elif saved_playlists[local_playlist.yt_id].song_ids is not None:
-                local_playlist.song_ids = saved_playlists[local_playlist.yt_id].song_ids
 
-        # Get songs of each playlist
+        # Get songs in the playlist
         remote_playlist_contents = run_API_request(lambda : YTM.get_playlist(playlistId=local_playlist.yt_id, limit=int(candidate_playlist['count']) + 1), "to get the songs for YouTube Music playlist \"" + local_playlist.name + "\"")
         playlist_length = str(len(remote_playlist_contents['tracks']))
         print("Playlist has " + playlist_length + " songs to check, starting... ")
@@ -48,7 +46,7 @@ for candidate_playlist in ytm_playlists:
             # Create Song object from YTM's response for the playlist contents
             local_song = Song()
             local_song.yt_id = playlist_song['videoId']
-            if local_song.yt_id not in all_songs:
+            if local_song.yt_id not in songs_db:
                 local_song.album = playlist_song['album']
                 local_song.artist = playlist_song['artists'][0]['name']
                 local_song.name = playlist_song['title']
@@ -59,22 +57,24 @@ for candidate_playlist in ytm_playlists:
                 else:
                     # Some YTM songs don't include duration in the playlist response
                     print("Using alternate method to get duration of song \"" + local_song.name + "\". ")
-                    alt_lookup_song = download_metadata(local_song.yt_id)
+                    alt_lookup_song = download_metadata_from_YT_id(local_song.yt_id)
                     local_song.duration_s = alt_lookup_song.duration_s
 
-                gather_song_features(local_song)
-                all_songs[local_song.yt_id] = local_song
+                download_song_features(local_song)
+                songs_db[local_song.yt_id] = local_song
 
             local_playlist.song_ids.append(local_song.yt_id)
 
-        # Store playlist as a file
+        # Store complete playlist
         playlist_file = open('./' + PLAYLIST_FILE_PREFIX + local_playlist.yt_id + PLAYLIST_FILE_EXTENSION, "wb")
         pickle.dump(local_playlist, playlist_file)
         playlist_file.close()
+        playlists_db[local_playlist.yt_id] = local_playlist
         print("Done processing playlist \"" + local_playlist.name + "\"; saved to folder. ")
 
-        if not get_user_bool("Want to continue checking additional playlists? "):
+        if not prompt_user_for_bool("Want to continue checking additional playlists? "):
             break
 
 print("Done processing playlists; saving song database and exiting. ")
-write_song_db(all_songs)
+cleanup_songs_db(songs_db, playlists_db)
+write_song_db(songs_db)
