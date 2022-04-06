@@ -326,7 +326,6 @@ def download_song_features(song : Song) -> Song:
 
     return song
 
-# TODO: Check db for songs that do not belong to a playlist and offer to delete them
 def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
     """Loads local playlist files into a dict (keyed by YT id) and returns it.  
     Also returns dict of songs by YT id.  Takes optional path argument or just seaches current directory."""
@@ -365,6 +364,7 @@ def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
                 if missing_metadata_count % 10 == 9:
                     print("Correcting metadata for " + str(missing_metadata_count + 1) + "th song. ")
                 songs_db[song_id] = download_song_features(download_metadata_from_YT_id(song_id))
+                songs_db[song_id].yt_id = songs_db[song_id] # Don't use alternative ID
                 missing_metadata_count = missing_metadata_count + 1
         if missing_metadata_count > 0:
             print("Updated " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\". Note that album names could not be loaded. ")
