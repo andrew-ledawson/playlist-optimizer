@@ -102,8 +102,10 @@ class Song:
 
     yt_id = None
     spotify_id = None
+    spotify_preview_url = None
     # None if not downloaded, false if all downloaded, true if downloaded with error
     metadata_needs_review = None
+    is_private = None
 
     camelot_position = None
     camelot_is_minor = None
@@ -206,11 +208,12 @@ def download_metadata_from_YT_id(id : str) -> Song:
     local_song.artist = song_data['author']
     local_song.name = song_data['title']
     local_song.duration_s = int(song_data['lengthSeconds'])
+    local_song.is_private = song_data['isPrivate']
     if id != song_data['videoId']:
         print("Song \"" + local_song.name + "\" returned a different id (" + local_song.yt_id + ") than the one used to look it up (" + id + "). Ignoring the returned id. ")
     return local_song
 
-def download_song_features(song : Song) -> Song:
+def download_song_features(song : Song, compare_metadata = False, get_features = True) -> Song:
     """Takes a Song with basic metadata and uses Spotify Track Features API to fill in extended musical metadata"""
 
     # Make an initial search term
@@ -221,7 +224,7 @@ def download_song_features(song : Song) -> Song:
     else:
         initial_query_string = query_string = song.name + " " + song.artist
 
-    # Allow retrying search until results found (or search options are exhausted)
+    # Retry search until results are found (or search options are exhausted)
     strict_time_matching = True
     target_song = None
     user_search_string = "" 
@@ -274,55 +277,136 @@ def download_song_features(song : Song) -> Song:
         else:
             query_string = user_search_string
 
-    # No song was found; can't look up data.  Warn user and flag song.  
+    # No song was found; can't look up data. Warn user and flag song.  
     if target_song is None:
         print("Search still had no results; leaving song metadata empty. ")
         song.metadata_needs_review = True
 
     # Song was found.  Look up its "features" and process them before saving song to playlist.
     else:
-        song.spotify_id = target_song['id']
-        # Fill album name from Spotify if YTM alt endpoint was used
-        if song.album is None:
-            song.album = target_song['album']['name']
-        features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify data for track ID " + song.spotify_id)
+        song.spotify_preview_url = target_song['preview_url']
+        if get_features:
+            song.spotify_id = target_song['id']
+            # Fill album name from Spotify if YTM alt endpoint was used
+            if song.album is None:
+                song.album = target_song['album']['name']
+            features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify data for track ID " + song.spotify_id)
 
-        # Keep BPM consistent between 90 and 180
-        provisional_bpm = features['tempo']
-        while provisional_bpm < 90:
-            provisional_bpm = provisional_bpm * 2
-        while provisional_bpm >= 180:
-            provisional_bpm = provisional_bpm / 2
-        song.bpm = provisional_bpm
+            # Keep BPM consistent between 90 and 180
+            provisional_bpm = features['tempo']
+            while provisional_bpm < 90:
+                provisional_bpm = provisional_bpm * 2
+            while provisional_bpm >= 180:
+                provisional_bpm = provisional_bpm / 2
+            song.bpm = provisional_bpm
 
-        # Validate Spotify pitch class then convert to camelot wheel position number 
-        # Camelot position numbers are in tuples (position for major key, position for minor key)
-        camelot_lookup = {
-            0: (8, 5),
-            1: (3, 12),
-            2: (10, 7),
-            3: (5, 2),
-            4: (12, 9),
-            5: (7, 4), 
-            6: (2, 11),
-            7: (9, 6),
-            8: (4, 1),
-            9: (11, 8),
-            10: (6, 3),
-            11: (1, 10)
-        }
-        if features['key'] == -1:
-            print("Spotify does not know the key of " + initial_query_string)
-            song.metadata_needs_review = True
-        else:
-            if features['mode'] == 1:
-                song.camelot_position, _ = camelot_lookup[features['key']]
-                song.camelot_is_minor = False
+            # Validate Spotify pitch class then convert to camelot wheel position number 
+            # Camelot position numbers are in tuples (position for major key, position for minor key)
+            camelot_lookup = {
+                0: (8, 5),
+                1: (3, 12),
+                2: (10, 7),
+                3: (5, 2),
+                4: (12, 9),
+                5: (7, 4), 
+                6: (2, 11),
+                7: (9, 6),
+                8: (4, 1),
+                9: (11, 8),
+                10: (6, 3),
+                11: (1, 10)
+            }
+            if features['key'] == -1:
+                print("Spotify does not know the key of " + initial_query_string)
+                song.metadata_needs_review = True
             else:
-                _, song.camelot_position = camelot_lookup[features['key']]
-                song.camelot_is_minor = True
-            if song.metadata_needs_review is None:
-                song.metadata_needs_review = False
+                if features['mode'] == 1:
+                    song.camelot_position, _ = camelot_lookup[features['key']]
+                    song.camelot_is_minor = False
+                else:
+                    _, song.camelot_position = camelot_lookup[features['key']]
+                    song.camelot_is_minor = True
+                if song.metadata_needs_review is None:
+                    song.metadata_needs_review = False
+
+        # Compares current metadata to Spotify results and prompts user to correct if necessary
+        if compare_metadata:
+            # dict of song metadata fields, YTM object keys, and list of Spotpy subdict keys
+            metadata_fields = [('Song name', ['name'], ['name']),
+                               ('Song artist', ['artist'], ['artists', 0, 'name']),
+                               ('Song album', ['album'], ['album', 'name']),
+                               ('Song BPM', ['bpm'], None),
+                               ('Song key (Camelot wheel position number)', ['camelot_position'], None),
+                               ('Song is in minor key', ['camelot_is_minor'], None)]
+
+            # Print fields
+            print("Printing metadata to check. Type a field number and choose data from [c]urrent data, [s]potify's data, [m]anual input, or [e]xit. \n" +\
+                  " For example, \"1s\" selects Spotify's song name. ")
+            for field_number, (field_name, yt_field_list, sp_field_list) in enumerate(metadata_fields):
+                preferred_field = 'yt'
+
+                # Check wihcih fields are available to compare
+                yt_field = None
+                if yt_field_list is not None:
+                    yt_field = song
+                    for field_name in yt_field_list:
+                        yt_field = getattr(yt_field, field_name)
+                sp_field = None
+                if sp_field_list is not None:
+                    sp_field = target_song
+                    for field_name in sp_field_list:
+                        sp_field = getattr(sp_field, field_name)
+
+                # Determine which field is optimal, if either
+                if yt_field is None:
+                    if sp_field is None:
+                        preferred_field = 'manual'
+                    else:
+                        preferred_field = 'sp'
+                else:
+                    if sp_field is not None and yt_field != sp_field:
+                        preferred_field = 'either'
+
+                # Print the current field data, showing relevant options
+                field_print = "(None, [m]anually input)"
+                if preferred_field == 'yt':
+                    field_print = yt_field + " (current)"
+                elif preferred_field == 'sp':
+                    field_print = sp_field + " (from Spotify)"
+                elif preferred_field == 'either':
+                    field_print = yt_field + " ([c]urrent) or " + sp_field + " (from [s]potify)"
+                print(str(field_number + 1) + ". " + field_name + ": " + field_print)
+
+            # Take edit actions from user
+            while True:
+                user_input = input('Choose edit action or [e]xit: ')
+                # Exit
+                if user_input == 'e':
+                    break
+                # Edit a field
+                if len(user_input) == 2:
+                    field_number = int(user_input[0]) - 1
+                    field_target = user_input[1]
+                    if field_number != 0 and field_number < len(metadata_fields):
+                        # Determine what field data the user prefers
+                        preferred_data = None
+                        if field_target == 'c':
+                            preferred_data = yt_field
+                        elif field_target == 's':
+                            preferred_data = sp_field
+                        elif field_target == 'm':
+                            preferred_data = input(field_name + ": ")
+                            if preferred_data == '':
+                                preferred_data = None
+                        else:
+                            continue
+
+                        # Write preferred data
+                        write_target = song
+                        _, field_list, _ = metadata_fields[field_number]
+                        for field_name in field_list[:-1]:
+                            write_target = getattr(write_target, field_name)
+                        setattr(write_target, field_list[-1], preferred_data)
 
     return song
 
@@ -335,7 +419,8 @@ def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
     # Load songs db, checking for backup in case save was interrupted
     songs_db = dict()
     if os.path.exists(SONG_DB_FILE + '.bak'):
-        if prompt_user_for_bool("Songs database backup detected; last save may have failed. Replace the primary copy with the backup? "):
+        print("Songs database backup detected; last save may have failed.")
+        if prompt_user_for_bool("Replace the primary copy with the backup? "):
             os.rename(SONG_DB_FILE + '.bak', SONG_DB_FILE)
         else:
             os.remove(SONG_DB_FILE + '.bak')
@@ -348,7 +433,6 @@ def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
     playlist_files = glob.glob(PLAYLIST_FILE_PREFIX + '*' + PLAYLIST_FILE_EXTENSION, dir_fd=glob.glob(path)[0])
     playlists_db = dict()
     for playlist_file_name in playlist_files:
-        playlist = Song()
         playlist_file = open(playlist_file_name, "rb")
         playlist = pickle.load(playlist_file)
         playlist_file.close()
@@ -357,7 +441,7 @@ def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
         # Check if any songs are not in database and download them
         missing_metadata_count = 0
         if playlist.song_ids is None:
-            print("Warning: playlist ID " + playlist.yt_id + " did not finish saving. You may need to delete its file. ")
+            print("Warning: playlist ID " + playlist.yt_id + " seems empty and should be redownloaded. ")
         for song_id in playlist.song_ids:
             if song_id not in songs_db:
                 # Print update every 10 retrievals since they take a while
@@ -367,7 +451,7 @@ def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
                 songs_db[song_id].yt_id = songs_db[song_id] # Don't use alternative ID
                 missing_metadata_count = missing_metadata_count + 1
         if missing_metadata_count > 0:
-            print("Updated " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\". Note that album names could not be loaded. ")
+            print("Updated " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\". Note that album names cannot be loaded. ")
 
     print("Loaded " + str(len(playlists_db.keys())) + " saved playlists and " + str(len(songs_db.keys())) + " songs. ")
     return playlists_db, songs_db
