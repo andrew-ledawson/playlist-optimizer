@@ -338,6 +338,7 @@ def download_song_features(song : Song, compare_metadata = False, get_features =
                                ('Song BPM', ['bpm'], None),
                                ('Song key (Camelot wheel position number)', ['camelot_position'], None),
                                ('Song is in minor key', ['camelot_is_minor'], None)]
+                               # TODO: support editing ratings
 
             # Print fields
             print("Printing metadata to check. Type a field number and choose data from [c]urrent data, [s]potify's data, [m]anual input, or [e]xit. \n" +\

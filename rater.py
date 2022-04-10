@@ -41,7 +41,7 @@ while sample_time_offset is None:
         print("Invalid number of seconds. Input some number, starting at 0. ")
 
 def print_traits_info():
-    print("\nRate songs from -2 to 2 for the following traits: ")
+    print("\nRemember to rate songs from -2 to 2 for the following traits: ")
     for trait, description in USER_RATINGS.items():
         print(trait + ": " + description)
 
@@ -56,7 +56,7 @@ while desired_reminder_frequency is None:
     except:
         print("Invalid time. Input some number, starting at 0. ")
 
-print("\nTo play a preview of some songs, you need to provide a \"Netscape format\" \"cookies.txt\" file of music.youtube.com. ")
+print("\nTo play a preview of some songs, you need to provide a \"Netscape format cookies.txt\" file from your music.youtube.com session. ")
 print("Please provide the path to the file, or enter nothing to skip playback. ")
 cookies_file_path = input("Cookies file path: ")
 
@@ -135,6 +135,6 @@ for index, song_id in enumerate(selected_song_ids):
         elif skip_to_next_song:
             continue
 
-print("Rated " + str(num_songs_rated) + " songs; saving song database and exiting. ")
+print("\nRated " + str(num_songs_rated) + " songs; saving song database and exiting. ")
 cleanup_songs_db(songs_db, playlists_db)
 write_song_db(songs_db)
