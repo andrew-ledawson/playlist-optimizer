@@ -90,16 +90,17 @@ for index, song_id in enumerate(selected_song_ids):
                     # Parse the response JSON to find preferred audio formats
                     # 251 is higher quality OPUS audio (for all videos)
                     # 140 and 141 are YouTube Music AAC formats
-                    # 18 is 360p MP4, a legacy non-DASH format
+                    # 18 is 360p MP4, a legacy non-DASH video+audio format
                     for perferred_format in ["251", "140", "141", "18"]:
                         for format_json in yt_manifest['formats']:
                             if format_json['format_id'] == perferred_format:
                                 play_url = format_json['url']
                 except:
                     print("Failed to acquire stream for song sample (ID " + song_id + "). ")
-                    # TODO: Check alt song data API 'isPrivate' is True
-                    # or musicVideoType is 'MUSIC_VIDEO_TYPE_PRIVATELY_OWNED_TRACK'
-                    print("Note that this program cannot stream songs that you uploaded to your own account. ")
+                    if target_song.is_private:
+                        print("This is a private song uploaded directly to your account. It cannot be played externally. ")
+            if play_url is None:
+                play_url = target_song.spotify_preview_url
             if play_url is not None:
                 player = subprocess.Popen("ffmpeg/bin/ffplay.exe " + play_url + " -volume " + str(desired_volume) + " -ss " + str(sample_time_offset) + " -nodisp -loglevel error", stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
                 # stdout=subprocess.DEVNULL,
