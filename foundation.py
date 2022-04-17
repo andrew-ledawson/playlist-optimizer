@@ -95,6 +95,8 @@ class Playlist:
 @total_ordering
 class Song:
     """A song (presumably shared between YouTube Music and Spotify)"""
+    # Members are referenced by strings in dict metadata_fields in download_song_features()
+    # so update that when changing member names
     album = None
     artist = None
     name = None
@@ -120,6 +122,19 @@ class Song:
             if trait not in self.user_ratings or self.user_ratings[trait] == None:
                 return False
         return True
+
+    def set_bpm(self, bpm : float):
+        assert bpm > 0, "BPM must be a positive value"
+        # Keep BPM consistent between 90 and 180
+        while bpm < 90:
+            bpm = bpm * 2
+        while bpm >= 180:
+            bpm = bpm / 2
+        self.bpm = bpm
+
+    def set_camelot_position(self, camelot_position : int):
+        assert 1 <= camelot_position <= 12, "Camelot wheel position is invalid"
+        self.camelot_position = camelot_position
 
     def __lt__(self, other) -> bool:
         # Ensure other object is a Song
@@ -193,14 +208,15 @@ class Song:
 Global funtions
 """
 
-def prompt_user_for_bool(message : str) -> bool:
-    """Prompts the user to respond to a message with 'y' or 'n'"""
-    user_input = ""
-    while user_input != 'y' and user_input != 'n':
-        user_input = input(message + "(y/n): ")
+def prompt_user_for_bool(message:str, allow_no_response = False) -> bool:
+    """Prompts the user to respond to a message with 'y' or 'n', or optionally no response"""
+    user_input = None
+    input_options_string = "y/n/[empty]" if allow_no_response else "y/n"
+    while user_input != 'y' and user_input != 'n' and not (allow_no_response and user_input == ""):
+        user_input = input(message + "(" + input_options_string + "): ")
     return user_input == 'y'
 
-def download_metadata_from_YT_id(id : str) -> Song:
+def download_metadata_from_YT_id(id:str) -> Song:
     """Takes a YouTube song ID and gets basic metadata (using a different call than the playlist contents endpoint)."""
     song_data = run_API_request(lambda : YTM.get_song(id)['videoDetails'], "to look up metadata for YouTube song " + id)
     local_song = Song()
@@ -213,7 +229,7 @@ def download_metadata_from_YT_id(id : str) -> Song:
         print("Song \"" + local_song.name + "\" returned a different id (" + local_song.yt_id + ") than the one used to look it up (" + id + "). Ignoring the returned id. ")
     return local_song
 
-def download_song_features(song : Song, compare_metadata = False, get_features = True) -> Song:
+def download_song_features(song:Song, compare_metadata = False, get_features = True) -> Song:
     """Takes a Song with basic metadata and uses Spotify Track Features API to fill in extended musical metadata"""
 
     # Make an initial search term
@@ -292,13 +308,7 @@ def download_song_features(song : Song, compare_metadata = False, get_features =
                 song.album = target_song['album']['name']
             features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify data for track ID " + song.spotify_id)
 
-            # Keep BPM consistent between 90 and 180
-            provisional_bpm = features['tempo']
-            while provisional_bpm < 90:
-                provisional_bpm = provisional_bpm * 2
-            while provisional_bpm >= 180:
-                provisional_bpm = provisional_bpm / 2
-            song.bpm = provisional_bpm
+            song.set_bpm(float(features['tempo']))
 
             # Validate Spotify pitch class then convert to camelot wheel position number 
             # Camelot position numbers are in tuples (position for major key, position for minor key)
@@ -331,19 +341,25 @@ def download_song_features(song : Song, compare_metadata = False, get_features =
 
         # Compares current metadata to Spotify results and prompts user to correct if necessary
         if compare_metadata:
-            # dict of song metadata fields, YTM object keys, and list of Spotpy subdict keys
-            metadata_fields = [('Song name', ['name'], ['name']),
-                               ('Song artist', ['artist'], ['artists', 0, 'name']),
-                               ('Song album', ['album'], ['album', 'name']),
-                               ('Song BPM', ['bpm'], None),
-                               ('Song key (Camelot wheel position number)', ['camelot_position'], None),
-                               ('Song is in minor key', ['camelot_is_minor'], None)]
-                               # TODO: support editing ratings
+            # List of dicts containing song metadata fields, list of Song object sub-members, and list of Spotpy sub-dict keys
+            metadata_fields = [{'field_name':'Song name', 'yt_fields':['name'], 'sp_fields':['name'], 'type':str, 'setter': None},
+                               {'field_name':'Song artist', 'yt_fields':['artist'], 'sp_fields':['artists', 0, 'name'], 'type':str, 'setter': None},
+                               {'field_name':'Song album', 'yt_fields':['album'], 'sp_fields':['album', 'name'], 'type':str, 'setter': None},
+                               {'field_name':'Song BPM (decimal)', 'yt_fields':['bpm'], 'sp_fields':None, 'type':float, 'setter': "set_bpm"},
+                               {'field_name':'Song key (Camelot wheel position number)', 'yt_fields':['camelot_position'], 'sp_fields':None, 'type':int, 'setter': None},
+                               {'field_name':'Song is in minor key', 'yt_fields':['camelot_is_minor'], 'sp_fields':None, 'type':bool, 'setter': None}]
+
+            # Add current ratings to fields-dict
+            for rating in USER_RATINGS:
+                metadata_fields.append(("Rating: " + rating, ['user_ratings', rating], None))
 
             # Print fields
-            print("Printing metadata to check. Type a field number and choose data from [c]urrent data, [s]potify's data, [m]anual input, or [e]xit. \n" +\
+            print("Printing metadata to check. Type a field number and choose data from [c]urrent data, [s]potify's data, or [m]anual input; or save and [e]xit. \n" +\
                   " For example, \"1s\" selects Spotify's song name. ")
-            for field_number, (field_name, yt_field_list, sp_field_list) in enumerate(metadata_fields):
+            for field_number, fields_dict in enumerate(metadata_fields):
+                field_name = fields_dict["field_name"]
+                yt_field_list = fields_dict["yt_fields"]
+                sp_field_list = fields_dict["sp_fields"]
                 preferred_field = 'yt'
 
                 # Check wihcih fields are available to compare
@@ -381,9 +397,11 @@ def download_song_features(song : Song, compare_metadata = False, get_features =
             # Take edit actions from user
             while True:
                 user_input = input('Choose edit action or [e]xit: ')
+                
                 # Exit
                 if user_input == 'e':
                     break
+                
                 # Edit a field
                 if len(user_input) == 2:
                     field_number = int(user_input[0]) - 1
@@ -391,24 +409,35 @@ def download_song_features(song : Song, compare_metadata = False, get_features =
                     if field_number != 0 and field_number < len(metadata_fields):
                         # Determine what field data the user prefers
                         preferred_data = None
+                        
+                        # User selected current "YTM" data
                         if field_target == 'c':
                             preferred_data = yt_field
+                        
+                        # User selected Spotify data
                         elif field_target == 's':
                             preferred_data = sp_field
+                        
                         elif field_target == 'm':
+                            # TODO: convert and validate field type, then set, obeying setter
                             preferred_data = input(field_name + ": ")
+                            # Empty string means no data, which we support as "None"
                             if preferred_data == '':
                                 preferred_data = None
+                        
                         else:
                             continue
 
-                        # Write preferred data
+                        # TODO: Validate preferred data (tolerate None, and if something else, run validation lambda)
+
+                        # Save preferred data to field
                         write_target = song
                         _, field_list, _ = metadata_fields[field_number]
                         for field_name in field_list[:-1]:
                             write_target = getattr(write_target, field_name)
                         setattr(write_target, field_list[-1], preferred_data)
 
+    # TODO: clear needs_review flag
     return song
 
 def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
