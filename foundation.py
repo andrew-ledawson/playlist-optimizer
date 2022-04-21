@@ -355,11 +355,13 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
 
             # Print fields
             print("Printing metadata to check. Type a field number and choose data from [c]urrent data, [s]potify's data, or [m]anual input; or save and [e]xit. \n" +\
-                  " For example, \"1s\" selects Spotify's song name. ")
+                  " For example, \"1s\" selects Spotify's song name. The \"review needed\" flag is cleared upon exit unless you command [f]lag. ")
             for field_number, fields_dict in enumerate(metadata_fields):
                 field_name = fields_dict["field_name"]
                 yt_field_list = fields_dict["yt_fields"]
                 sp_field_list = fields_dict["sp_fields"]
+                field_type = fields_dict['type']
+                field_setter_func = fields_dict['setter']
                 preferred_field = 'yt'
 
                 # Check wihcih fields are available to compare
@@ -400,6 +402,7 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                 
                 # Exit
                 if user_input == 'e':
+                    song.metadata_needs_review = False
                     break
                 
                 # Edit a field
@@ -407,6 +410,12 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                     field_number = int(user_input[0]) - 1
                     field_target = user_input[1]
                     if field_number != 0 and field_number < len(metadata_fields):
+                        fields_dict = metadata_fields[field_number]
+                        field_name = fields_dict["field_name"]
+                        yt_field_list = fields_dict["yt_fields"]
+                        sp_field_list = fields_dict["sp_fields"]
+                        field_type = fields_dict['type']
+                        field_setter_func = fields_dict['setter']
                         # Determine what field data the user prefers
                         preferred_data = None
                         
@@ -419,25 +428,27 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                             preferred_data = sp_field
                         
                         elif field_target == 'm':
-                            # TODO: convert and validate field type, then set, obeying setter
                             preferred_data = input(field_name + ": ")
-                            # Empty string means no data, which we support as "None"
-                            if preferred_data == '':
-                                preferred_data = None
-                        
+
+                            # Convert input
+                            if field_type == str:
+                                # Empty string means no data, which we support as "None"
+                                if preferred_data == '':
+                                    preferred_data = None
+                            elif field_type == float:
+                                preferred_data = float(preferred_data)
+                            elif field_type == int:
+                                preferred_data = int(preferred_data)
+                            
+                            # 
+                            if field_setter_func is not None:
+                                getattr(song, field_setter_func)(preferred_data)
+                            else:
+                                setattr(song, yt_field_list[0], preferred_data)
+
                         else:
                             continue
 
-                        # TODO: Validate preferred data (tolerate None, and if something else, run validation lambda)
-
-                        # Save preferred data to field
-                        write_target = song
-                        _, field_list, _ = metadata_fields[field_number]
-                        for field_name in field_list[:-1]:
-                            write_target = getattr(write_target, field_name)
-                        setattr(write_target, field_list[-1], preferred_data)
-
-    # TODO: clear needs_review flag
     return song
 
 def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
@@ -511,12 +522,3 @@ def cleanup_songs_db(songs_db : dict[str, Song], playlists_db : dict[str, Playli
             for song_id in unseen_songs:
                 songs_db.pop(song_id)
     return songs_db
-
-def cleanup_song_traits(song : Song):
-    """WIP: Checks traits, reads them, and offers to remove them."""
-    for trait in song.user_ratings:
-        if trait not in USER_RATINGS:
-            print("Trait \"" + str(trait) + "\" (score " + str(song.user_ratings[trait]) + ") is no longer used and will be removed. ")
-            if trait in DEPRECATED_RATINGS:
-                print("Trait description: " + str(DEPRECATED_RATINGS[trait]))
-            # TODO
