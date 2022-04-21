@@ -211,7 +211,7 @@ Global funtions
 def prompt_user_for_bool(message:str, allow_no_response = False) -> bool:
     """Prompts the user to respond to a message with 'y' or 'n', or optionally no response"""
     user_input = None
-    input_options_string = "y/n/[empty]" if allow_no_response else "y/n"
+    input_options_string = "[y]es/[n]o/[empty]" if allow_no_response else "[y]es/[n]o"
     while user_input != 'y' and user_input != 'n' and not (allow_no_response and user_input == ""):
         user_input = input(message + "(" + input_options_string + "): ")
     return user_input == 'y'
@@ -397,16 +397,22 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                 print(str(field_number + 1) + ". " + field_name + ": " + field_print)
 
             # Take edit actions from user
+            override_flag = False
             while True:
                 user_input = input('Choose edit action or [e]xit: ')
                 
                 # Exit
                 if user_input == 'e':
-                    song.metadata_needs_review = False
+                    if not override_flag:
+                        song.metadata_needs_review = False
                     break
+
+                elif user_input == 'f':
+                    override_flag = True
+                    continue
                 
                 # Edit a field
-                if len(user_input) == 2:
+                elif len(user_input) == 2:
                     field_number = int(user_input[0]) - 1
                     field_target = user_input[1]
                     if field_number != 0 and field_number < len(metadata_fields):
@@ -428,19 +434,22 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                             preferred_data = sp_field
                         
                         elif field_target == 'm':
-                            preferred_data = input(field_name + ": ")
-
-                            # Convert input
-                            if field_type == str:
-                                # Empty string means no data, which we support as "None"
-                                if preferred_data == '':
-                                    preferred_data = None
-                            elif field_type == float:
-                                preferred_data = float(preferred_data)
-                            elif field_type == int:
-                                preferred_data = int(preferred_data)
+                            preferred_data = None
+                            if field_type == bool:
+                                preferred_data = prompt_user_for_bool(field_name + " ", True)
+                            else:
+                                preferred_data = input(field_name + ": ")
+                                # Convert input
+                                if field_type == str:
+                                    # Empty string means no data, which we support as "None"
+                                    if preferred_data == '':
+                                        preferred_data = None
+                                elif field_type == float:
+                                    preferred_data = float(preferred_data)
+                                elif field_type == int:
+                                    preferred_data = int(preferred_data)
                             
-                            # 
+                            # Set input
                             if field_setter_func is not None:
                                 getattr(song, field_setter_func)(preferred_data)
                             else:
@@ -522,3 +531,16 @@ def cleanup_songs_db(songs_db : dict[str, Song], playlists_db : dict[str, Playli
             for song_id in unseen_songs:
                 songs_db.pop(song_id)
     return songs_db
+
+def prompt_for_playlist(playlists_db : dict[str, Playlist], prompt_message : str = "Pick a playlist or enter nothing for all songs: ") -> list[str]:
+    print(prompt_message)
+    for number, playlist in enumerate(list(playlists_db.values())):
+        print(str(number + 1) + ": " + playlist.name)
+    selected_song_ids = list()
+    selection = input("Playlist: ")
+    if selection == "":
+        selected_song_ids = songs_db.keys()
+    else:
+        selected_playlist = list(playlists_db.values())[int(selection) - 1]
+        selected_song_ids = selected_playlist.song_ids
+    return selected_song_ids

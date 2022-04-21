@@ -9,16 +9,8 @@ print("Make sure that the contents of an FFMPEG release are in a folder named \"
 playlists_db, songs_db = load_data_files()
 
 # Prompt user to select playlist
-print("\nEnter a playlist number to rate, or enter nothing to rate all songs in database. ")
-for number, playlist in enumerate(list(playlists_db.values())):
-    print(str(number + 1) + ": " + playlist.name)
-selected_song_ids = list()
-selection = input("Playlist: ")
-if selection == "":
-    selected_song_ids = songs_db.keys()
-else:
-    selected_playlist = list(playlists_db.values())[int(selection) - 1]
-    selected_song_ids = selected_playlist.song_ids
+prompt_message = "\nEnter a playlist number to rate, or enter nothing to rate all songs in database. "
+selected_song_ids = prompt_for_playlist(playlists_db, prompt_message)
 
 print("\nWhat output volume (0-100) should song samples be played at? ")
 desired_volume = None
