@@ -1,13 +1,18 @@
 from foundation import *
 
 saved_playlists, all_songs = load_data_files('.')
-ids_to_remove = []
+
+for key, song in all_songs.items():
+    if type(song.album) is dict:
+        song.album = song.album['name']
+
+"""ids_to_remove = []
 for id, song in all_songs.items():
     if type(song) is not Song:
         ids_to_remove.append(id)
         print("Popping " + id)
 for id in ids_to_remove:
-    all_songs.pop(id)
+    all_songs.pop(id)"""
 
 """for index, song_a in enumerate(list(all_songs.values())):
     #song_a.user_ratings = dict()

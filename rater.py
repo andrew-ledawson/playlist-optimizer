@@ -11,6 +11,8 @@ playlists_db, songs_db = load_data_files()
 # Prompt user to select playlist
 prompt_message = "\nEnter a playlist number to rate, or enter nothing to rate all songs in database. "
 selected_song_ids = prompt_for_playlist(playlists_db, prompt_message)
+if selected_song_ids is None:
+    selected_song_ids = songs_db.keys()
 
 print("\nWhat output volume (0-100) should song samples be played at? ")
 desired_volume = None

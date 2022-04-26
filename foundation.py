@@ -342,124 +342,135 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                 if song.metadata_needs_review is None:
                     song.metadata_needs_review = False
 
-        # Compares current metadata to Spotify results and prompts user to correct if necessary
-        if compare_metadata:
-            # List of dicts containing song metadata fields, list of Song object sub-members, and list of Spotpy sub-dict keys
-            metadata_fields = [{'field_name':'Song name', 'yt_fields':['name'], 'sp_fields':['name'], 'type':str, 'setter': None},
-                               {'field_name':'Song artist', 'yt_fields':['artist'], 'sp_fields':['artists', 0, 'name'], 'type':str, 'setter': None},
-                               {'field_name':'Song album', 'yt_fields':['album'], 'sp_fields':['album', 'name'], 'type':str, 'setter': None},
-                               {'field_name':'Song BPM (decimal)', 'yt_fields':['bpm'], 'sp_fields':None, 'type':float, 'setter': "set_bpm"},
-                               {'field_name':'Song key (Camelot wheel position number)', 'yt_fields':['camelot_position'], 'sp_fields':None, 'type':int, 'setter': None},
-                               {'field_name':'Song is in minor key', 'yt_fields':['camelot_is_minor'], 'sp_fields':None, 'type':bool, 'setter': None}]
+    # Compares current metadata to Spotify results and prompts user to correct if necessary
+    if compare_metadata:
+        # List of dicts containing song metadata fields, list of Song object sub-members, and list of Spotpy sub-dict keys
+        metadata_fields = [{'field_name':'Song name', 'yt_fields':['name'], 'sp_fields':['name'], 'type':str, 'setter':None},
+                            {'field_name':'Song artist', 'yt_fields':['artist'], 'sp_fields':['artists', 0, 'name'], 'type':str, 'setter':None},
+                            {'field_name':'Song album', 'yt_fields':['album'], 'sp_fields':['album', 'name'], 'type':str, 'setter':None},
+                            {'field_name':'Song BPM (decimal)', 'yt_fields':['bpm'], 'sp_fields':None, 'type':float, 'setter':"set_bpm"},
+                            {'field_name':'Song key (Camelot wheel position number)', 'yt_fields':['camelot_position'], 'sp_fields':None, 'type':int, 'setter':None},
+                            {'field_name':'Song is in minor key', 'yt_fields':['camelot_is_minor'], 'sp_fields':None, 'type':bool, 'setter':None}]
 
-            # Add current ratings to fields-dict
-            for rating in USER_RATINGS:
-                metadata_fields.append(("Rating: " + rating, ['user_ratings', rating], None))
+        # Add current ratings to fields-dict
+        for rating in USER_RATINGS:
+            metadata_fields.append({'field_name':"Rating: " + rating, 'yt_fields':['user_ratings', rating], 'sp_fields':None, 'type':int, 'setter':None})
 
-            # Print fields
-            print("Printing metadata to check. Type a field number and choose data from [c]urrent data, [s]potify's data, or [m]anual input; or save and [e]xit. \n" +\
-                  " For example, \"1s\" selects Spotify's song name. The \"review needed\" flag is cleared upon exit unless you command [f]lag. ")
-            for field_number, fields_dict in enumerate(metadata_fields):
-                field_name = fields_dict["field_name"]
-                yt_field_list = fields_dict["yt_fields"]
-                sp_field_list = fields_dict["sp_fields"]
-                field_type = fields_dict['type']
-                field_setter_func = fields_dict['setter']
-                preferred_field = 'yt'
+        # Print fields
+        print("Printing metadata to check. Type a field number and choose data from [c]urrent data, [s]potify's data, or [m]anual input; or save and [e]xit. \n" +\
+                " For example, \"1s\" selects Spotify's song name. The \"review needed\" flag is cleared upon exit unless you command [f]lag. ")
+        for field_number, fields_dict in enumerate(metadata_fields):
+            field_name = fields_dict["field_name"]
+            yt_field_list = fields_dict["yt_fields"]
+            sp_field_list = fields_dict["sp_fields"]
+            field_type = fields_dict['type']
+            field_setter_func = fields_dict['setter']
+            preferred_field = 'yt'
 
-                # Check wihcih fields are available to compare
-                yt_field = None
-                if yt_field_list is not None:
-                    yt_field = song
-                    for field_name in yt_field_list:
-                        yt_field = getattr(yt_field, field_name)
-                sp_field = None
-                if sp_field_list is not None:
-                    sp_field = target_song
-                    for field_name in sp_field_list:
-                        sp_field = sp_field[field_name]
+            # Check wihcih fields are available to compare
+            yt_field = None
+            if yt_field_list is not None:
+                yt_field = song
+                for field_str in yt_field_list:
+                    if not yt_field:
+                        break
+                    try:
+                        yt_field = getattr(yt_field, field_str)
+                    except AttributeError:
+                        yt_field = yt_field[field_str]
+                        
+            sp_field = None
+            if sp_field_list is not None and target_song is not None:
+                sp_field = target_song
+                for field_str in sp_field_list:
+                    sp_field = sp_field[field_str]
 
-                # Determine which field is optimal, if either
-                if yt_field is None:
-                    if sp_field is None:
-                        preferred_field = 'manual'
-                    else:
-                        preferred_field = 'sp'
+            # Determine which field is optimal, if either
+            if yt_field is None:
+                if sp_field is None:
+                    preferred_field = 'manual'
                 else:
-                    if sp_field is not None and yt_field != sp_field:
-                        preferred_field = 'either'
+                    preferred_field = 'sp'
+            else:
+                if sp_field is not None and yt_field != sp_field:
+                    preferred_field = 'either'
 
-                # Print the current field data, showing relevant options
-                field_print = "(None, [m]anually input)"
-                if preferred_field == 'yt':
-                    field_print = yt_field + " (current)"
-                elif preferred_field == 'sp':
-                    field_print = sp_field + " (from Spotify)"
-                elif preferred_field == 'either':
-                    field_print = yt_field + " ([c]urrent) or " + sp_field + " (from [s]potify)"
-                print(str(field_number + 1) + ". " + field_name + ": " + field_print)
+            # Print the current field data, showing relevant options
+            field_print = "(None, [m]anually input)"
+            if preferred_field == 'yt':
+                field_print = str(yt_field) + " (current)"
+            elif preferred_field == 'sp':
+                field_print = sp_field + " (from Spotify)"
+            elif preferred_field == 'either':
+                field_print = yt_field + " ([c]urrent) or " + sp_field + " (from [s]potify)"
+            print(str(field_number + 1) + ". " + field_name + ": " + field_print)
 
-            # Take edit actions from user
-            override_flag = False
-            while True:
-                user_input = input('Choose edit action or [e]xit: ')
-                
-                # Exit
-                if user_input == 'e':
-                    if not override_flag:
-                        song.metadata_needs_review = False
-                    break
+        # Take edit actions from user
+        override_flag = False
+        while True:
+            user_input = input('Choose edit action, [e]xit, or [a]bort all downloading: ')
+            
+            # Exit
+            if user_input == 'e':
+                if not override_flag:
+                    song.metadata_needs_review = False
+                break
 
-                elif user_input == 'f':
-                    override_flag = True
-                    continue
-                
-                # Edit a field
-                elif len(user_input) == 2:
-                    field_number = int(user_input[0]) - 1
-                    field_target = user_input[1]
-                    if field_number != 0 and field_number < len(metadata_fields):
-                        fields_dict = metadata_fields[field_number]
-                        field_name = fields_dict["field_name"]
-                        yt_field_list = fields_dict["yt_fields"]
-                        sp_field_list = fields_dict["sp_fields"]
-                        field_type = fields_dict['type']
-                        field_setter_func = fields_dict['setter']
-                        # Determine what field data the user prefers
+            elif user_input == 'f':
+                override_flag = True
+                continue
+
+            elif user_input == 'a':
+                return None
+            
+            # Edit a field
+            elif len(user_input) == 2:
+                print("DEBUG: possible edit command received: " + user_input)
+                field_number = int(user_input[0]) - 1
+                field_target = user_input[1]
+                if field_number >= 0 and field_number < len(metadata_fields):
+                    fields_dict = metadata_fields[field_number]
+                    field_name = fields_dict["field_name"]
+                    yt_field_list = fields_dict["yt_fields"]
+                    sp_field_list = fields_dict["sp_fields"]
+                    field_type = fields_dict['type']
+                    field_setter_func = fields_dict['setter']
+                    # Determine what field data the user prefers
+                    preferred_data = None
+                    
+                    # User selected current "YTM" data
+                    if field_target == 'c':
+                        preferred_data = yt_field
+                    
+                    # User selected Spotify data
+                    elif field_target == 's':
+                        preferred_data = sp_field
+                    
+                    elif field_target == 'm':
+                        print("DEBUG: editing field manually for field " + str(field_number))
                         preferred_data = None
-                        
-                        # User selected current "YTM" data
-                        if field_target == 'c':
-                            preferred_data = yt_field
-                        
-                        # User selected Spotify data
-                        elif field_target == 's':
-                            preferred_data = sp_field
-                        
-                        elif field_target == 'm':
-                            preferred_data = None
-                            if field_type == bool:
-                                preferred_data = prompt_user_for_bool(field_name + " ", True)
-                            else:
-                                preferred_data = input(field_name + ": ")
-                                # Convert input
-                                if field_type == str:
-                                    # Empty string means no data, which we support as "None"
-                                    if preferred_data == '':
-                                        preferred_data = None
-                                elif field_type == float:
-                                    preferred_data = float(preferred_data)
-                                elif field_type == int:
-                                    preferred_data = int(preferred_data)
-                            
-                            # Set input
-                            if field_setter_func is not None:
-                                getattr(song, field_setter_func)(preferred_data)
-                            else:
-                                setattr(song, yt_field_list[0], preferred_data)
-
+                        if field_type == bool:
+                            preferred_data = prompt_user_for_bool(field_name + " ", True)
                         else:
-                            continue
+                            preferred_data = input(field_name + ": ")
+                            # Convert input
+                            if field_type == str:
+                                # Empty string means no data, which we support as "None"
+                                if preferred_data == '':
+                                    preferred_data = None
+                            elif field_type == float:
+                                preferred_data = float(preferred_data)
+                            elif field_type == int:
+                                preferred_data = int(preferred_data)
+                        
+                        # Set input
+                        if field_setter_func is not None:
+                            getattr(song, field_setter_func)(preferred_data)
+                        else:
+                            setattr(song, yt_field_list[0], preferred_data)
+
+                    else:
+                        continue
 
     return song
 
@@ -542,7 +553,7 @@ def prompt_for_playlist(playlists_db : dict[str, Playlist], prompt_message : str
     selected_song_ids = list()
     selection = input("Playlist: ")
     if selection == "":
-        selected_song_ids = songs_db.keys()
+        selected_song_ids = None
     else:
         selected_playlist = list(playlists_db.values())[int(selection) - 1]
         selected_song_ids = selected_playlist.song_ids

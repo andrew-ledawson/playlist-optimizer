@@ -50,7 +50,7 @@ for candidate_playlist in ytm_playlists:
             local_song = Song()
             local_song.yt_id = playlist_song['videoId']
             if local_song.yt_id not in songs_db:
-                local_song.album = playlist_song['album']
+                local_song.album = playlist_song['album']['name']
                 local_song.artist = playlist_song['artists'][0]['name']
                 local_song.name = playlist_song['title']
                 if 'duration' in playlist_song:
