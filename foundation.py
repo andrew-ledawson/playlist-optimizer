@@ -33,6 +33,9 @@ PLAYLIST_FILE_PREFIX = 'playlist_'
 PLAYLIST_FILE_EXTENSION = '.ytp'
 SONG_DB_FILE = 'songs.yts'
 
+# Constants for logic
+CAMELOT_POSITIONS = 12
+
 # Check Python version on init because this uses ordered dicts
 MIN_PYTHON = (3, 6)
 if sys.version_info < MIN_PYTHON:
@@ -133,7 +136,7 @@ class Song:
         self.bpm = bpm
 
     def set_camelot_position(self, camelot_position : int):
-        assert 1 <= camelot_position <= 12, "Camelot wheel position is invalid"
+        assert 1 <= camelot_position <= CAMELOT_POSITIONS, "Camelot wheel position is invalid"
         self.camelot_position = camelot_position
 
     def __lt__(self, other) -> bool:
@@ -374,7 +377,7 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                 if sp_field_list is not None:
                     sp_field = target_song
                     for field_name in sp_field_list:
-                        sp_field = getattr(sp_field, field_name)
+                        sp_field = sp_field[field_name]
 
                 # Determine which field is optimal, if either
                 if yt_field is None:
