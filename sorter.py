@@ -2,9 +2,8 @@ import math
 from foundation import *
 
 # v1 of the score is simply 50% key and 50% ratings.  It has no awareness of previous "momentum".
-# Key is 1.0 if identical, 0.8 if changing one unit over, etc. down to 0
-# Average all ratings.  For each rating, 1.0 if identical, 0.75 if one apart, etc.
 def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
+    # Key is 1.0 if identical, 0.8 if changing one unit over, etc. down to 0
     hops_between_keys = abs(song1.camelot_position - song2.camelot_position)
     if hops_between_keys > (CAMELOT_POSITIONS / 2):
         hops_between_keys = CAMELOT_POSITIONS - hops_between_keys
@@ -14,6 +13,7 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     if key_subscore < 0.0:
         key_subscore = 0.0
 
+    # Average all ratings.  For each rating, 1.0 if identical, 0.75 if one apart, etc.
     subscores = []
     for rating_key in USER_RATINGS:
         rating_difference = abs(song1.user_ratings[rating_key] - song2.user_ratings[rating_key])

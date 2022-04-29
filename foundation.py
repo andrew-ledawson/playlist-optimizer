@@ -1,13 +1,11 @@
-import glob, pickle, re, sys, time
-from multiprocessing.sharedctypes import Value
-import os
-from importlib.metadata import metadata
+import copy, glob, pickle, os, re, sys, time
+
 from functools import total_ordering
 from typing import Callable
 
-from ytmusicapi import YTMusic
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+from ytmusicapi import YTMusic
 
 """
 Global variables and init functions
@@ -59,7 +57,7 @@ OPS_TO_RESTORE_BACKOFF = 20
 MAX_TIME_MULTIPLIER = 32
 def run_API_request(operation : Callable, description="an unknown web query"):
     """Runs a lamba (presumably containing an API call) and returns its result.
-       Keeps a rate limit to avoid getting flagged/banned and backs off upon exceptions."""
+       Keeps a rate limit and backs off upon exceptions."""
     global LAST_OP_TIME, TIME_BETWEEN_OPS, OPS_SINCE_BACKOFF, DEFAULT_TIME_BETWEEN_OPS, OPS_TO_RESTORE_BACKOFF, MAX_TIME_MULTIPLIER
 
     # Check if it's safe to try faster requests
@@ -128,17 +126,22 @@ class Song:
         return True
 
     def set_bpm(self, bpm : float):
-        assert bpm > 0, "BPM must be a positive value"
-        # Keep BPM consistent between 90 and 180
-        while bpm < 90:
-            bpm = bpm * 2
-        while bpm >= 180:
-            bpm = bpm / 2
+        if bpm is not None:
+            assert bpm is None or bpm > 0, "BPM must be a positive value"
+            # Keep BPM consistent between 90 and 180
+            while bpm < 90:
+                bpm = bpm * 2
+            while bpm >= 180:
+                bpm = bpm / 2
         self.bpm = bpm
 
     def set_camelot_position(self, camelot_position : int):
-        assert 1 <= camelot_position <= CAMELOT_POSITIONS, "Camelot wheel position is invalid"
+        assert camelot_position is None or 1 <= camelot_position <= CAMELOT_POSITIONS, "Camelot wheel position is invalid"
         self.camelot_position = camelot_position
+
+    def set_user_rating(self, rating_name : str, rating_number : int):
+        assert rating_number is None or -2 <= rating_number <= 2, "Rating is not between -2 and +2"
+        self.user_ratings[rating_name] = rating_number
 
     def __lt__(self, other) -> bool:
         # Ensure other object is a Song
@@ -221,7 +224,8 @@ def prompt_user_for_bool(message:str, allow_no_response = False) -> bool:
     return user_input == 'y'
 
 def download_metadata_from_YT_id(id:str) -> Song:
-    """Takes a YouTube song ID and gets basic metadata (using a different call than the playlist contents endpoint)."""
+    """Takes a YouTube song ID and gets basic metadata (using a direct lookup endpoint). 
+       This endpoint returns different data than the playlist songs endpoint."""
     song_data = run_API_request(lambda : YTM.get_song(id)['videoDetails'], "to look up metadata for YouTube song " + id)
     local_song = Song()
     local_song.yt_id = id
@@ -234,19 +238,20 @@ def download_metadata_from_YT_id(id:str) -> Song:
     return local_song
 
 def download_song_features(song:Song, compare_metadata = False, get_features = True) -> Song:
-    """Takes a Song with basic metadata and uses Spotify Track Features API to fill in extended musical metadata"""
+    """Takes a Song with basic metadata and uses Spotify Track Features API to fill in extended musical metadata.
+    Supports metadata verification against Spotify."""
 
     # Make an initial search term
-    initial_query_string = ""
+    initial_spotify_search_str = ""
     if song.name is None or song.artist is None:
         print("Not sure how to search Spotify for song \"" + str(song.name) + "\" (YouTube ID " + str(song.yt_id) + "). ")
-        initial_query_string = input('Search Spotify for: ')
+        initial_spotify_search_str = input('Search Spotify for: ')
     else:
-        initial_query_string = query_string = song.name + " " + song.artist
+        initial_spotify_search_str = query_string = song.name + " " + song.artist
 
     # Retry search until results are found (or search options are exhausted)
     strict_time_matching = True
-    target_song = None
+    matching_spotify_song = None
     user_search_string = "" 
     while True:
         search_results = run_API_request(lambda : SP.search(query_string, type='track'), "a Spotify search")
@@ -258,7 +263,7 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                 for candidate_song in search_results['tracks']['items']:
                     time_difference_s = (float(candidate_song['duration_ms'])/1000) - float(song.duration_s)
                     if abs(time_difference_s) <= MAX_SONG_TIME_DIFFERENCE:
-                        target_song = candidate_song
+                        matching_spotify_song = candidate_song
                         song.metadata_needs_review = False
                         break
             # User has disabled duration checking, just take the first song and notify them
@@ -266,7 +271,7 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                 candidate_song = search_results['tracks']['items'][0]
                 time_difference_s = candidate_song['duration_ms']/1000 - song.duration_s
                 print("Selected the first search result, which is " + str(int(abs(time_difference_s))) + " seconds " + ("longer" if time_difference_s > 0 else "shorter") + ". ")
-                target_song = search_results['tracks']['items'][0]
+                matching_spotify_song = search_results['tracks']['items'][0]
                 song.metadata_needs_review = True
                 break
 
@@ -275,17 +280,17 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
             break
 
         # Target song found, stop searching
-        if target_song:
+        if matching_spotify_song:
             if user_search_string != "":
                 print("Found a matching song. ")
             break
 
         # If the initial search didn't match, try search without "feat." in the track name
         # because Spotify doesn't seem to like that
-        if strict_time_matching and query_string == initial_query_string:
+        if strict_time_matching and query_string == initial_spotify_search_str:
             query_string = re.sub('( \(\s*feat.+\))', '', query_string, flags=re.IGNORECASE)
             # There was a "feat" to reove in the search string, so we'll retry the search
-            if query_string != initial_query_string:
+            if query_string != initial_spotify_search_str:
                 continue
 
         # Song not found, prompt user to modify search query
@@ -298,18 +303,18 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
             query_string = user_search_string
 
     # No song was found; can't look up data. Warn user and flag song.  
-    if target_song is None:
+    if matching_spotify_song is None:
         print("Search still had no results; leaving song metadata empty. ")
         song.metadata_needs_review = True
 
     # Song was found.  Look up its "features" and process them before saving song to playlist.
     else:
-        song.spotify_preview_url = target_song['preview_url']
+        song.spotify_preview_url = matching_spotify_song['preview_url']
         if get_features:
-            song.spotify_id = target_song['id']
+            song.spotify_id = matching_spotify_song['id']
             # Fill album name from Spotify if YTM alt endpoint was used
             if song.album is None:
-                song.album = target_song['album']['name']
+                song.album = matching_spotify_song['album']['name']
             features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify data for track ID " + song.spotify_id)
 
             song.set_bpm(float(features['tempo']))
@@ -331,7 +336,7 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                 11: (1, 10)
             }
             if features['key'] == -1:
-                print("Spotify does not know the key of " + initial_query_string)
+                print("Spotify does not know the key of " + initial_spotify_search_str)
                 song.metadata_needs_review = True
             else:
                 if features['mode'] == 1:
@@ -343,7 +348,7 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                 if song.metadata_needs_review is None:
                     song.metadata_needs_review = False
 
-    # Compares current metadata to Spotify results and prompts user to correct if necessary
+    # Metadata editor that can compare data from 
     if compare_metadata:
         # List of dicts containing song metadata fields, list of Song object sub-members, and list of Spotpy sub-dict keys
         metadata_fields = [{'field_name':'Song name', 'yt_fields':['name'], 'sp_fields':['name'], 'type':str, 'setter':None},
@@ -354,140 +359,174 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                             {'field_name':'Song is in minor key', 'yt_fields':['camelot_is_minor'], 'sp_fields':None, 'type':bool, 'setter':None}]
 
         # Add current ratings to fields-dict
-        for rating in USER_RATINGS:
-            metadata_fields.append({'field_name':"Rating: " + rating, 'yt_fields':['user_ratings', rating], 'sp_fields':None, 'type':int, 'setter':None})
+        for rating_name in USER_RATINGS:
+            # TODO: setter is still overwritten with each iteration
+            setter = lambda rating_number : song.set_user_rating(copy.deepcopy(rating_name), rating_number)
+            metadata_fields.append({'field_name':rating_name + " rating", 'yt_fields':['user_ratings', rating_name], 'sp_fields':None, 'type':int, 'setter':setter})
 
-        def print_metadata():
+        def get_field(current_field, field_list, hide_empty = True):
+            """Takes a dict or object and a list of strings, then iterates to get the desired subfield."""
+            for field_str in field_list:
+                if current_field is None:
+                    break
+                try:
+                    current_field = getattr(current_field, field_str)
+                except (AttributeError, TypeError, KeyError):
+                    try: 
+                        current_field = current_field[field_str]
+                    except (AttributeError, TypeError, KeyError):
+                        current_field = None
+                        break
+            # Empty strings, dicts, and the like will be treated like they are unset
+            try:
+                if hide_empty and len(current_field) == 0:
+                    current_field = None
+            except:
+                pass
+            return current_field
+
+        def print_metadata(metadata_fields, song, matching_spotify_song):
+            print("Printing metadata to check. Type a field number and [s]potify's data, or [m]anual input. Or [p]rint this metadata/help again, save and [c]ontinue to next song/operation, or [a]bort all operations. \n" +\
+              "For example, \"1s\" selects Spotify's song name. The \"review needed\" flag is cleared upon exit unless you set it with [f]lag. \n" +\
+              "You can [a]bort all operations to exit, but changes will still be saved (flag will be left intact). ")
             for field_number, fields_dict in enumerate(metadata_fields):
                 field_name = fields_dict["field_name"]
                 yt_field_list = fields_dict["yt_fields"]
                 sp_field_list = fields_dict["sp_fields"]
-                field_type = fields_dict['type']
-                field_setter_func = fields_dict['setter']
-                preferred_field = 'yt'
 
-                # Check wihcih fields are available to compare
+                # Check which fields are available to compare
                 yt_field = None
                 if yt_field_list is not None:
-                    yt_field = song
-                    for field_str in yt_field_list:
-                        if not yt_field:
-                            break
-                        try:
-                            yt_field = getattr(yt_field, field_str)
-                        except AttributeError:
-                            yt_field = yt_field[field_str]
+                    yt_field = get_field(song, yt_field_list)
                             
                 sp_field = None
-                if sp_field_list is not None and target_song is not None:
-                    sp_field = target_song
-                    for field_str in sp_field_list:
-                        sp_field = sp_field[field_str]
+                if sp_field_list is not None and matching_spotify_song is not None:
+                    sp_field = get_field(matching_spotify_song, sp_field_list)
 
-                # Determine which field is optimal, if either
+                # Determine which field(s) are available and print the appropriate hint
                 if yt_field is None:
                     if sp_field is None:
-                        preferred_field = 'manual'
+                        # Neither field available
+                        field_to_print = "(Unset, [m]anually input)"
                     else:
-                        preferred_field = 'sp'
+                        # Only Spotify available
+                        field_to_print = sp_field + " ([s]potify)"
+                elif sp_field is not None and yt_field != sp_field:
+                    # Both fields avaialable
+                    field_to_print = yt_field + " (current data) or " + sp_field + " (from [s]potify)"
                 else:
-                    if sp_field is not None and yt_field != sp_field:
-                        preferred_field = 'either'
+                    # Only current (YTM) available
+                    field_to_print = str(yt_field) + " (current data)"
+                print(str(field_number + 1) + ". " + field_name + ": " + field_to_print)
 
-                # Print the current field data, showing relevant options
-                field_print = "(None, [m]anually input)"
-                if preferred_field == 'yt':
-                    field_print = str(yt_field) + " (current)"
-                elif preferred_field == 'sp':
-                    field_print = sp_field + " (from Spotify)"
-                elif preferred_field == 'either':
-                    field_print = yt_field + " ([c]urrent) or " + sp_field + " (from [s]potify)"
-                print(str(field_number + 1) + ". " + field_name + ": " + field_print)
+        print_metadata(metadata_fields, song, matching_spotify_song)
 
-        print("Printing metadata to check. Type a field number and choose data from [c]urrent data, [s]potify's data, or [m]anual input. Or [p]rint fields again, [s]ave and continue, or [a]bort all operations. \n" +\
-              "For example, \"1s\" selects Spotify's song name. The \"review needed\" flag is cleared upon exit unless you command [f]lag. \n" +\
-              "You can [a]bort all operations to exit, but changes will still be saved (flag will be left intact). ")
-        print_metadata()
+        # Check fields for empty strings and replace them with None since they're effectively unset
+        for selected_field_number, fields_dict in enumerate(metadata_fields):
+            if fields_dict['type'] is str:
+                yt_field_list = fields_dict["yt_fields"]
+                field_setter_func = fields_dict['setter']
+
+                # Check which fields are available to compare
+                yt_field = None
+                if yt_field_list is not None:
+                    yt_field = get_field(song, yt_field_list, hide_empty=False)
+                if yt_field == "":
+                    if field_setter_func is not None:
+                        # Get and execute the setter func
+                        getattr(song, field_setter_func)(None)
+                    else:
+                        # No setter func, so just directly set
+                        setattr(song, yt_field_list[0], None)
 
         # Take edit actions from user
         override_flag = False
         while True:
-            user_input = input('Input an action, [s]ave and continue, or [a]bort all operations: ')
+            user_input = input('Input an action such as [p]rint metadata/help, save and [c]ontinue, or [a]bort all operations: ')
             
-            # Exit
-            if user_input == 's':
+            # "Save" and exit
+            if user_input == 'c':
                 if not override_flag:
                     song.metadata_needs_review = False
                 break
 
+            # Keep flag set (or set flag for later)
             elif user_input == 'f':
                 override_flag = True
+                song.metadata_needs_review = True
+                print("Flag set. ")
                 continue
 
+            # Abort and immediately exit
             elif user_input == 'a':
                 return None
 
+            # Print metadata
             elif user_input == 'p':
-                print_metadata()
+                print_metadata(metadata_fields, song, matching_spotify_song)
             
-            # Edit a field
-            elif len(user_input) == 2:
-                field_number = int(user_input[0]) - 1
-                field_target = user_input[1]
-                if field_number >= 0 and field_number < len(metadata_fields):
-                    fields_dict = metadata_fields[field_number]
+            # User must be commanding an edit
+            else:
+                selected_field_number = None
+                try:
+                    selected_field_number = int(user_input[0:-1]) - 1
+                    selected_field_action = user_input[-1]
+                    assert selected_field_action in ['s', 'm']
+                except (AssertionError, ValueError):
+                    print("Invalid command, try again? ")
+                    continue
+                if selected_field_number >= 0 and selected_field_number < len(metadata_fields):
+                    fields_dict = metadata_fields[selected_field_number]
                     field_name = fields_dict["field_name"]
                     yt_field_list = fields_dict["yt_fields"]
                     sp_field_list = fields_dict["sp_fields"]
                     field_type = fields_dict['type']
                     field_setter_func = fields_dict['setter']
+
                     # Determine what field data the user prefers
-                    preferred_data = None
-                    
-                    # User selected current "YTM" data
-                    if field_target == 'c':
-                        preferred_data = yt_field
-                    
+                    new_field_data = None
+
                     # User selected Spotify data
-                    elif field_target == 's':
-                        preferred_data = sp_field
-                    
-                    elif field_target == 'm':
-                        preferred_data = None
+                    if selected_field_action == 's':
+                        new_field_data = get_field(matching_spotify_song, sp_field_list)
+
+                    # User selected manual input
+                    elif selected_field_action == 'm':
+                        new_field_data = None
                         if field_type == bool:
-                            preferred_data = prompt_user_for_bool(field_name + " ", True)
+                            new_field_data = prompt_user_for_bool(field_name + " ", True)
                         else:
                             while True:
-                                preferred_data = input(field_name + ": ")
+                                new_field_data = input(field_name + ": ")
                                 # Empty string means no data, which we support as "None"
-                                if preferred_data == '':
-                                    preferred_data = None
+                                if new_field_data == '':
+                                    new_field_data = None
                                     break
                                 # Convert input if necessary
                                 if field_type == float:
                                     try:
-                                        preferred_data = float(preferred_data)
+                                        new_field_data = float(new_field_data)
                                         break
                                     except ValueError:
                                         continue
                                 elif field_type == int:
                                     try:
-                                        preferred_data = int(preferred_data)
+                                        new_field_data = int(new_field_data)
                                         break
                                     except ValueError:
                                         continue
                                 else:
                                     break
                         
-                        # Set input
-                        if field_setter_func is not None:
-                            # Get and execute the setter func
-                            getattr(song, field_setter_func)(preferred_data)
-                        else:
-                            setattr(song, yt_field_list[0], preferred_data)
-
+                    # Set field as the user commaned
+                    if type(field_setter_func) == str:
+                        # Get and execute the setter func
+                        getattr(song, field_setter_func)(new_field_data)
+                    elif field_setter_func is not None:
+                        field_setter_func(new_field_data)
                     else:
-                        continue
+                        # No setter func, so just directly set
+                        setattr(song, yt_field_list[0], new_field_data)
 
     return song
 
@@ -564,6 +603,7 @@ def cleanup_songs_db(songs_db : dict[str, Song], playlists_db : dict[str, Playli
     return songs_db
 
 def prompt_for_playlist(playlists_db : dict[str, Playlist], prompt_message : str = "Pick a playlist or enter nothing for all songs: ") -> list[str]:
+    """Prompts user to select playlists from the given dict. Allows user to select none to load all songs."""
     print(prompt_message)
     for number, playlist in enumerate(list(playlists_db.values())):
         print(str(number + 1) + ": " + playlist.name)
