@@ -11,18 +11,21 @@ if song_ids_to_check is None:
 
 should_check_flagged_songs = prompt_user_for_bool("Check only songs that were flagged for review? ")
 
+search_spotify = prompt_user_for_bool("Search Spotify for song metadata? ")
+
+# TODO later: offer advanced control to delete songs, redownload features, etc.
+
 num_songs_processed = 0
 for song_id in song_ids_to_check:
     song = songs_db[song_id]
     assert song is not None, "Song ID " + song_id + " not found in database. Please rerun downloader. "
     if song.metadata_needs_review or not should_check_flagged_songs:
         num_songs_processed = num_songs_processed + 1
-        check_result = download_song_features(song, compare_metadata=True, get_features=False)
+        check_result = process_song_metadata(song=song, search_spotify=search_spotify, edit_metadata=True, get_features=False)
         if check_result is None:
             break
 
-# TODO: If thorough, check video ID against YouTube and prompt if private
-# TODO: if thorough and private fixes made, prompt user to replace remote playlist
+# TODO later: Make "private fixer" that checks video ID against YouTube, prompts if private, and offers to update remote playlist
 
 print("Processed " + str(num_songs_processed) + " songs; saving song database and exiting. ")
 cleanup_songs_db(songs_db, playlists_db)

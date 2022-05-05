@@ -2,6 +2,7 @@ import copy, glob, pickle, os, re, sys, time
 
 from functools import total_ordering
 from typing import Callable
+from xmlrpc.client import Boolean
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
@@ -116,7 +117,6 @@ class Song:
     bpm = None
 
     user_ratings = dict()
-    #owning_playlists = list()
 
     def has_latest_ratings(self):
         global USER_RATINGS
@@ -205,12 +205,6 @@ class Song:
         # Ignore owning playlists since that just relates to 
         return True
 
-    # Owning playlists is an instance-dependent variable that should not be pickled
-    """def __getstate__(self):
-        state = self.__dict__.copy()
-        state['owning_playlists'] = list()
-        return state"""
-
 """
 Global funtions
 """
@@ -237,119 +231,128 @@ def download_metadata_from_YT_id(id:str) -> Song:
         print("Song \"" + local_song.name + "\" returned a different id (" + local_song.yt_id + ") than the one used to look it up (" + id + "). Ignoring the returned id. ")
     return local_song
 
-def download_song_features(song:Song, compare_metadata = False, get_features = True) -> Song:
+# TODO: Break into multiple functions
+def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boolean, get_features:Boolean) -> Song:
     """Takes a Song with basic metadata and uses Spotify Track Features API to fill in extended musical metadata.
     Supports metadata verification against Spotify."""
+    assert search_spotify or not get_features, "Can't get song features without searching Spotify"
 
-    # Make an initial search term
-    initial_spotify_search_str = ""
-    if song.name is None or song.artist is None:
-        print("Not sure how to search Spotify for song \"" + str(song.name) + "\" (YouTube ID " + str(song.yt_id) + "). ")
-        initial_spotify_search_str = input('Search Spotify for: ')
-    else:
-        initial_spotify_search_str = query_string = song.name + " " + song.artist
-
-    # Retry search until results are found (or search options are exhausted)
-    strict_time_matching = True
     matching_spotify_song = None
-    user_search_string = "" 
-    while True:
-        search_results = run_API_request(lambda : SP.search(query_string, type='track'), "a Spotify search")
+    if search_spotify:
+        # Make an initial search term
+        initial_spotify_search_str = ""
+        if song.name is None or song.artist is None:
+            print("Not sure how to search Spotify for song \"" + str(song.name) + "\" (YouTube ID " + str(song.yt_id) + "). ")
+            initial_spotify_search_str = input('Search Spotify for: ')
+        else:
+            initial_spotify_search_str = query_string = song.name + " " + song.artist
 
-        # Results were returned, check them
-        if search_results and len(search_results['tracks']['items']) > 0:
-            # Check that the Spotify song is about the same duration as the YTM version
-            if strict_time_matching:
-                for candidate_song in search_results['tracks']['items']:
-                    time_difference_s = (float(candidate_song['duration_ms'])/1000) - float(song.duration_s)
-                    if abs(time_difference_s) <= MAX_SONG_TIME_DIFFERENCE:
-                        matching_spotify_song = candidate_song
-                        song.metadata_needs_review = False
-                        break
-            # User has disabled duration checking, just take the first song and notify them
-            else:
-                candidate_song = search_results['tracks']['items'][0]
-                time_difference_s = candidate_song['duration_ms']/1000 - song.duration_s
-                print("Selected the first search result, which is " + str(int(abs(time_difference_s))) + " seconds " + ("longer" if time_difference_s > 0 else "shorter") + ". ")
-                matching_spotify_song = search_results['tracks']['items'][0]
-                song.metadata_needs_review = True
+        # Retry search until results are found (or search options are exhausted)
+        strict_time_matching = True
+        user_search_string = "" 
+        while True:
+            search_results = run_API_request(lambda : SP.search(query_string, type='track'), "a Spotify search")
+
+            # Results were returned, check them
+            if search_results and len(search_results['tracks']['items']) > 0:
+                # Check that the Spotify song is about the same duration as the YTM version
+                if strict_time_matching:
+                    for candidate_song in search_results['tracks']['items']:
+                        time_difference_s = (float(candidate_song['duration_ms'])/1000) - float(song.duration_s)
+                        if abs(time_difference_s) <= MAX_SONG_TIME_DIFFERENCE:
+                            matching_spotify_song = candidate_song
+                            song.metadata_needs_review = False
+                            break
+                # User has disabled duration checking, just take the first song and notify them
+                else:
+                    candidate_song = search_results['tracks']['items'][0]
+                    time_difference_s = candidate_song['duration_ms']/1000 - song.duration_s
+                    print("Selected the first search result, which is " + str(int(abs(time_difference_s))) + " seconds " + ("longer" if time_difference_s > 0 else "shorter") + ". ")
+                    matching_spotify_song = search_results['tracks']['items'][0]
+                    song.metadata_needs_review = True
+                    break
+
+            # No song found even with loose time matching, stop searching
+            elif not strict_time_matching:
                 break
 
-        # No song found even with loose time matching, stop searching
-        elif not strict_time_matching:
-            break
+            # Target song found, stop searching
+            if matching_spotify_song:
+                if user_search_string != "":
+                    print("Found a matching song. ")
+                break
 
-        # Target song found, stop searching
-        if matching_spotify_song:
-            if user_search_string != "":
-                print("Found a matching song. ")
-            break
+            # If the initial search didn't match, try search without "feat." in the track name
+            # because Spotify doesn't seem to like that
+            if strict_time_matching and query_string == initial_spotify_search_str:
+                query_string = re.sub('( \(\s*feat.+\))', '', query_string, flags=re.IGNORECASE)
+                # There was a "feat" to reove in the search string, so we'll retry the search
+                if query_string != initial_spotify_search_str:
+                    continue
 
-        # If the initial search didn't match, try search without "feat." in the track name
-        # because Spotify doesn't seem to like that
-        if strict_time_matching and query_string == initial_spotify_search_str:
-            query_string = re.sub('( \(\s*feat.+\))', '', query_string, flags=re.IGNORECASE)
-            # There was a "feat" to reove in the search string, so we'll retry the search
-            if query_string != initial_spotify_search_str:
-                continue
-
-        # Song not found, prompt user to modify search query
-        print("No song of matching length was found for the Spotify search \"" + query_string + "\". Try a new search query, or enter nothing to do a final retry without trying to match song length. ")
-        user_search_string = input('Search Spotify for: ')
-        # User had blank input; disable duration matching
-        if len(user_search_string) < 1:
-            strict_time_matching = False
-        else:
-            query_string = user_search_string
-
-    # No song was found; can't look up data. Warn user and flag song.  
-    if matching_spotify_song is None:
-        print("Search still had no results; leaving song metadata empty. ")
-        song.metadata_needs_review = True
-
-    # Song was found.  Look up its "features" and process them before saving song to playlist.
-    else:
-        song.spotify_preview_url = matching_spotify_song['preview_url']
-        if get_features:
-            song.spotify_id = matching_spotify_song['id']
-            # Fill album name from Spotify if YTM alt endpoint was used
-            if song.album is None:
-                song.album = matching_spotify_song['album']['name']
-            features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify data for track ID " + song.spotify_id)
-
-            song.set_bpm(float(features['tempo']))
-
-            # Validate Spotify pitch class then convert to camelot wheel position number 
-            # Camelot position numbers are in tuples (position for major key, position for minor key)
-            camelot_lookup = {
-                0: (8, 5),
-                1: (3, 12),
-                2: (10, 7),
-                3: (5, 2),
-                4: (12, 9),
-                5: (7, 4), 
-                6: (2, 11),
-                7: (9, 6),
-                8: (4, 1),
-                9: (11, 8),
-                10: (6, 3),
-                11: (1, 10)
-            }
-            if features['key'] == -1:
-                print("Spotify does not know the key of " + initial_spotify_search_str)
-                song.metadata_needs_review = True
+            # Song not found, prompt user to modify search query
+            print("No song of matching length was found for the Spotify search \"" + query_string + "\". Try a new search query, or enter nothing to do a final retry without trying to match song length. ")
+            user_search_string = input('Search Spotify for: ')
+            # User had blank input; disable duration matching
+            if len(user_search_string) < 1:
+                strict_time_matching = False
             else:
-                if features['mode'] == 1:
-                    song.camelot_position, _ = camelot_lookup[features['key']]
-                    song.camelot_is_minor = False
-                else:
-                    _, song.camelot_position = camelot_lookup[features['key']]
-                    song.camelot_is_minor = True
-                if song.metadata_needs_review is None:
-                    song.metadata_needs_review = False
+                query_string = user_search_string
 
-    # Metadata editor that can compare data from 
-    if compare_metadata:
+        # No song was found; can't look up data. Warn user and flag song.  
+    # No song was found; can't look up data. Warn user and flag song.  
+        # No song was found; can't look up data. Warn user and flag song.  
+        if matching_spotify_song is None:
+            print("Search still had no results; leaving song metadata empty. ")
+            song.metadata_needs_review = True
+
+        # Song was found.  Look up its "features" and process them before saving song to playlist.
+        else:
+            song.spotify_preview_url = matching_spotify_song['preview_url']
+            if get_features:
+                song.spotify_id = matching_spotify_song['id']
+                # Fill album name from Spotify if YTM alt endpoint was used
+                if song.album is None:
+                    song.album = matching_spotify_song['album']['name']
+                features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify data for track ID " + song.spotify_id)
+
+                song.set_bpm(float(features['tempo']))
+
+                # Validate Spotify pitch class then convert to camelot wheel position number 
+            # Validate Spotify pitch class then convert to camelot wheel position number 
+                # Validate Spotify pitch class then convert to camelot wheel position number 
+                # Camelot position numbers are in tuples (position for major key, position for minor key)
+                camelot_lookup = {
+                    0: (8, 5),
+                    1: (3, 12),
+                    2: (10, 7),
+                    3: (5, 2),
+                    4: (12, 9),
+                    5: (7, 4), 
+                5: (7, 4), 
+                    5: (7, 4), 
+                    6: (2, 11),
+                    7: (9, 6),
+                    8: (4, 1),
+                    9: (11, 8),
+                    10: (6, 3),
+                    11: (1, 10)
+                }
+                if features['key'] == -1:
+                    print("Spotify does not know the key of " + initial_spotify_search_str)
+                    song.metadata_needs_review = True
+                else:
+                    if features['mode'] == 1:
+                        song.camelot_position, _ = camelot_lookup[features['key']]
+                        song.camelot_is_minor = False
+                    else:
+                        _, song.camelot_position = camelot_lookup[features['key']]
+                        song.camelot_is_minor = True
+                    if song.metadata_needs_review is None:
+                        song.metadata_needs_review = False
+
+    # Metadata editor that can get metadata from Spotify
+    if edit_metadata:
         # List of dicts containing song metadata fields, list of Song object sub-members, and list of Spotpy sub-dict keys
         metadata_fields = [{'field_name':'Song name', 'yt_fields':['name'], 'sp_fields':['name'], 'type':str, 'setter':None},
                             {'field_name':'Song artist', 'yt_fields':['artist'], 'sp_fields':['artists', 0, 'name'], 'type':str, 'setter':None},
@@ -359,31 +362,61 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                             {'field_name':'Song is in minor key', 'yt_fields':['camelot_is_minor'], 'sp_fields':None, 'type':bool, 'setter':None}]
 
         # Add current ratings to fields-dict
+        ratings_setters = {}
         for rating_name in USER_RATINGS:
-            # TODO: setter is still overwritten with each iteration
-            setter = lambda rating_number : song.set_user_rating(copy.deepcopy(rating_name), rating_number)
-            metadata_fields.append({'field_name':rating_name + " rating", 'yt_fields':['user_ratings', rating_name], 'sp_fields':None, 'type':int, 'setter':setter})
+            # TODO: all setters but the final one are being replaced by the final one (but are somehow still distinct objects)
+            #setter = lambda rating_number : song.set_user_rating(rating_name, rating_number)
+            debug_print_string = "Debug setter for " + rating_name + " got rating of "
+            setter = lambda rating_number : print(debug_print_string + str(rating_number))
+            ratings_setters[rating_name] = copy.deepcopy(setter)
+            metadata_fields.append({'field_name':rating_name + " rating", 'yt_fields':['user_ratings', rating_name], 'sp_fields':None, 'type':int, 'setter':ratings_setters[rating_name]})
 
-        def get_field(current_field, field_list, hide_empty = True):
+        """# DEBUG
+        seen_setters = []
+        for field_number in range(6, 10):
+            print("checking field for " + metadata_fields[field_number]['field_name'])
+            print("for debug test, setting rating of 0")
+            seen_setters.append(metadata_fields[field_number]['setter'])
+            metadata_fields[field_number]['setter'](0)
+        for setter_number in range(0, len(seen_setters)):
+            for compare_setter_number in range(setter_number + 1, len(seen_setters)):
+                assert seen_setters[setter_number] is not seen_setters[compare_setter_number], "setters are copies!"
+        """
+
+        def get_field(current_object, subfield_list, hide_empty=True):
             """Takes a dict or object and a list of strings, then iterates to get the desired subfield."""
-            for field_str in field_list:
-                if current_field is None:
+            for field_name in subfield_list:
+                if current_object is None:
                     break
                 try:
-                    current_field = getattr(current_field, field_str)
+                    current_object = getattr(current_object, field_name)
                 except (AttributeError, TypeError, KeyError):
                     try: 
-                        current_field = current_field[field_str]
+                        current_object = current_object[field_name]
                     except (AttributeError, TypeError, KeyError):
-                        current_field = None
+                        current_object = None
                         break
             # Empty strings, dicts, and the like will be treated like they are unset
             try:
-                if hide_empty and len(current_field) == 0:
-                    current_field = None
+                if hide_empty and len(current_object) == 0:
+                    current_object = None
             except:
                 pass
-            return current_field
+            return current_object
+
+        def set_song_field(song, field_setter_func, new_field_data, yt_field_list : list):
+            if type(field_setter_func) == str:
+                # Get and execute the setter func from the song class
+                getattr(song, field_setter_func)(new_field_data)
+            elif field_setter_func is not None:
+                # Execute lambda
+                field_setter_func(new_field_data)
+            else:
+                # No setter func, so get the parent and set its child value
+                fields_to_parent = copy.deepcopy(yt_field_list)
+                fields_to_parent.pop()
+                parent_of_target = get_field(song, fields_to_parent, hide_empty=False)
+                setattr(parent_of_target, fields_to_parent[-1], new_field_data)
 
         def print_metadata(metadata_fields, song, matching_spotify_song):
             print("Printing metadata to check. Type a field number and [s]potify's data, or [m]anual input. Or [p]rint this metadata/help again, save and [c]ontinue to next song/operation, or [a]bort all operations. \n" +\
@@ -391,6 +424,7 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
               "You can [a]bort all operations to exit, but changes will still be saved (flag will be left intact). ")
             for field_number, fields_dict in enumerate(metadata_fields):
                 field_name = fields_dict["field_name"]
+                field_setter_func = fields_dict['setter']
                 yt_field_list = fields_dict["yt_fields"]
                 sp_field_list = fields_dict["sp_fields"]
 
@@ -398,7 +432,7 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                 yt_field = None
                 if yt_field_list is not None:
                     yt_field = get_field(song, yt_field_list)
-                            
+
                 sp_field = None
                 if sp_field_list is not None and matching_spotify_song is not None:
                     sp_field = get_field(matching_spotify_song, sp_field_list)
@@ -464,7 +498,7 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
             # Print metadata
             elif user_input == 'p':
                 print_metadata(metadata_fields, song, matching_spotify_song)
-            
+
             # User must be commanding an edit
             else:
                 selected_field_number = None
@@ -517,16 +551,8 @@ def download_song_features(song:Song, compare_metadata = False, get_features = T
                                         continue
                                 else:
                                     break
-                        
-                    # Set field as the user commaned
-                    if type(field_setter_func) == str:
-                        # Get and execute the setter func
-                        getattr(song, field_setter_func)(new_field_data)
-                    elif field_setter_func is not None:
-                        field_setter_func(new_field_data)
-                    else:
-                        # No setter func, so just directly set
-                        setattr(song, yt_field_list[0], new_field_data)
+
+                    set_song_field(song, field_setter_func, new_field_data, yt_field_list)
 
     return song
 
@@ -567,7 +593,7 @@ def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
                 # Print update every 10 retrievals since they take a while
                 if missing_metadata_count % 10 == 9:
                     print("Correcting metadata for " + str(missing_metadata_count + 1) + "th song. ")
-                songs_db[song_id] = download_song_features(download_metadata_from_YT_id(song_id))
+                songs_db[song_id] = process_song_metadata(song=download_metadata_from_YT_id(song_id), search_spotify=True, edit_metadata=True, get_features=True)
                 songs_db[song_id].yt_id = songs_db[song_id] # Don't use alternative ID
                 missing_metadata_count = missing_metadata_count + 1
         if missing_metadata_count > 0:

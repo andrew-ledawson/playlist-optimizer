@@ -63,7 +63,7 @@ for candidate_playlist in ytm_playlists:
                     alt_lookup_song = download_metadata_from_YT_id(local_song.yt_id)
                     local_song.duration_s = alt_lookup_song.duration_s
 
-                download_song_features(local_song)
+                process_song_metadata(song=local_song, search_spotify=True, edit_metadata=False, get_features=True)
                 songs_db[local_song.yt_id] = local_song
 
             local_playlist.song_ids.append(local_song.yt_id)
