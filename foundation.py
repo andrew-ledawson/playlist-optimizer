@@ -1,9 +1,9 @@
-import copy, glob, pickle, os, re, sys, time
-
+# Basic Python imports
+import glob, pickle, os, re, sys, time
 from functools import total_ordering
 from typing import Callable
-from xmlrpc.client import Boolean
 
+# Library imports for API access
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from ytmusicapi import YTMusic
@@ -56,7 +56,7 @@ TIME_BETWEEN_OPS = DEFAULT_TIME_BETWEEN_OPS = 1
 OPS_SINCE_BACKOFF = 0
 OPS_TO_RESTORE_BACKOFF = 20
 MAX_TIME_MULTIPLIER = 32
-def run_API_request(operation : Callable, description="an unknown web query"):
+def run_API_request(operation : Callable, description="an unknown web request"):
     """Runs a lamba (presumably containing an API call) and returns its result.
        Keeps a rate limit and backs off upon exceptions."""
     global LAST_OP_TIME, TIME_BETWEEN_OPS, OPS_SINCE_BACKOFF, DEFAULT_TIME_BETWEEN_OPS, OPS_TO_RESTORE_BACKOFF, MAX_TIME_MULTIPLIER
@@ -231,10 +231,10 @@ def download_metadata_from_YT_id(id:str) -> Song:
         print("Song \"" + local_song.name + "\" returned a different id (" + local_song.yt_id + ") than the one used to look it up (" + id + "). Ignoring the returned id. ")
     return local_song
 
-# TODO: Break into multiple functions
-def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boolean, get_features:Boolean) -> Song:
-    """Takes a Song with basic metadata and uses Spotify Track Features API to fill in extended musical metadata.
-    Supports metadata verification against Spotify."""
+# TODO later: Break into multiple functions
+def process_song_metadata(song:Song, search_spotify:bool, edit_metadata:bool, get_features:bool) -> Song:
+    """Takes a Song and expands its metadata with Spotify song search, Spotify Track Features API, and/or manual user input."""
+    # A Spotify song ID is necessary for their features API
     assert search_spotify or not get_features, "Can't get song features without searching Spotify"
 
     matching_spotify_song = None
@@ -300,8 +300,6 @@ def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boole
                 query_string = user_search_string
 
         # No song was found; can't look up data. Warn user and flag song.  
-    # No song was found; can't look up data. Warn user and flag song.  
-        # No song was found; can't look up data. Warn user and flag song.  
         if matching_spotify_song is None:
             print("Search still had no results; leaving song metadata empty. ")
             song.metadata_needs_review = True
@@ -309,17 +307,16 @@ def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boole
         # Song was found.  Look up its "features" and process them before saving song to playlist.
         else:
             song.spotify_preview_url = matching_spotify_song['preview_url']
+            song.spotify_id = matching_spotify_song['id']
+            # Fill album name from Spotify if YTM alt endpoint was used
+            if song.album is None:
+                song.album = matching_spotify_song['album']['name']
+
             if get_features:
-                song.spotify_id = matching_spotify_song['id']
-                # Fill album name from Spotify if YTM alt endpoint was used
-                if song.album is None:
-                    song.album = matching_spotify_song['album']['name']
-                features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify data for track ID " + song.spotify_id)
+                features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify musical features for track ID " + song.spotify_id)
 
                 song.set_bpm(float(features['tempo']))
 
-                # Validate Spotify pitch class then convert to camelot wheel position number 
-            # Validate Spotify pitch class then convert to camelot wheel position number 
                 # Validate Spotify pitch class then convert to camelot wheel position number 
                 # Camelot position numbers are in tuples (position for major key, position for minor key)
                 camelot_lookup = {
@@ -339,7 +336,7 @@ def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boole
                     11: (1, 10)
                 }
                 if features['key'] == -1:
-                    print("Spotify does not know the key of " + initial_spotify_search_str)
+                    print("Spotify omitted the musical key for " + initial_spotify_search_str)
                     song.metadata_needs_review = True
                 else:
                     if features['mode'] == 1:
@@ -351,39 +348,26 @@ def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boole
                     if song.metadata_needs_review is None:
                         song.metadata_needs_review = False
 
-    # Metadata editor that can get metadata from Spotify
+    # Metadata editor that can compare to metadata retrieved from Spotify
     if edit_metadata:
         # List of dicts containing song metadata fields, list of Song object sub-members, and list of Spotpy sub-dict keys
-        metadata_fields = [{'field_name':'Song name', 'yt_fields':['name'], 'sp_fields':['name'], 'type':str, 'setter':None},
-                            {'field_name':'Song artist', 'yt_fields':['artist'], 'sp_fields':['artists', 0, 'name'], 'type':str, 'setter':None},
-                            {'field_name':'Song album', 'yt_fields':['album'], 'sp_fields':['album', 'name'], 'type':str, 'setter':None},
-                            {'field_name':'Song BPM (decimal)', 'yt_fields':['bpm'], 'sp_fields':None, 'type':float, 'setter':"set_bpm"},
-                            {'field_name':'Song key (Camelot wheel position number)', 'yt_fields':['camelot_position'], 'sp_fields':None, 'type':int, 'setter':None},
-                            {'field_name':'Song is in minor key', 'yt_fields':['camelot_is_minor'], 'sp_fields':None, 'type':bool, 'setter':None}]
+        song_metadata_fields = [{'field_name':'Song name', 'yt_fields':['name'], 'sp_fields':['name'], 'type':str, 'setter':None},
+                                {'field_name':'Song artist', 'yt_fields':['artist'], 'sp_fields':['artists', 0, 'name'], 'type':str, 'setter':None},
+                                {'field_name':'Song album', 'yt_fields':['album'], 'sp_fields':['album', 'name'], 'type':str, 'setter':None},
+                                {'field_name':'Song BPM (decimal)', 'yt_fields':['bpm'], 'sp_fields':None, 'type':float, 'setter':"set_bpm"},
+                                {'field_name':'Song key (Camelot wheel position number)', 'yt_fields':['camelot_position'], 'sp_fields':None, 'type':int, 'setter':None},
+                                {'field_name':'Song is in minor key', 'yt_fields':['camelot_is_minor'], 'sp_fields':None, 'type':bool, 'setter':None}]
 
-        # Add current ratings to fields-dict
-        ratings_setters = {}
+        # Add possible user ratings to fields-dict
+        # TODO later: make song an argument into the lambda so we can set up the fields dict on program init
         for rating_name in USER_RATINGS:
-            # TODO: all setters but the final one are being replaced by the final one (but are somehow still distinct objects)
-            #setter = lambda rating_number : song.set_user_rating(rating_name, rating_number)
-            debug_print_string = "Debug setter for " + rating_name + " got rating of "
-            setter = lambda rating_number : print(debug_print_string + str(rating_number))
-            ratings_setters[rating_name] = copy.deepcopy(setter)
-            metadata_fields.append({'field_name':rating_name + " rating", 'yt_fields':['user_ratings', rating_name], 'sp_fields':None, 'type':int, 'setter':ratings_setters[rating_name]})
+            # Create a lambda to set rating for the current song
+            # Lambda needs a fake rating_name argument so that it can capture the current state
+            # Note: can't switch to copy.deepcopy() because lambdas are stateless/un-copy-able
+            setter = lambda rating_number, rating_name=rating_name : song.set_user_rating(rating_name, rating_number)
+            song_metadata_fields.append({'field_name':rating_name + " rating", 'yt_fields':['user_ratings', rating_name], 'sp_fields':None, 'type':int, 'setter':setter})
 
-        """# DEBUG
-        seen_setters = []
-        for field_number in range(6, 10):
-            print("checking field for " + metadata_fields[field_number]['field_name'])
-            print("for debug test, setting rating of 0")
-            seen_setters.append(metadata_fields[field_number]['setter'])
-            metadata_fields[field_number]['setter'](0)
-        for setter_number in range(0, len(seen_setters)):
-            for compare_setter_number in range(setter_number + 1, len(seen_setters)):
-                assert seen_setters[setter_number] is not seen_setters[compare_setter_number], "setters are copies!"
-        """
-
-        def get_field(current_object, subfield_list, hide_empty=True):
+        def get_field(current_object, subfield_list:list, hide_empty=True):
             """Takes a dict or object and a list of strings, then iterates to get the desired subfield."""
             for field_name in subfield_list:
                 if current_object is None:
@@ -404,7 +388,7 @@ def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boole
                 pass
             return current_object
 
-        def set_song_field(song, field_setter_func, new_field_data, yt_field_list : list):
+        def set_song_field(song:Song, field_setter_func, new_field_data, yt_field_list:list):
             if type(field_setter_func) == str:
                 # Get and execute the setter func from the song class
                 getattr(song, field_setter_func)(new_field_data)
@@ -413,16 +397,15 @@ def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boole
                 field_setter_func(new_field_data)
             else:
                 # No setter func, so get the parent and set its child value
-                fields_to_parent = copy.deepcopy(yt_field_list)
-                fields_to_parent.pop()
+                fields_to_parent = [yt_field_list[field_num] for field_num in range(len(yt_field_list) - 1)]
                 parent_of_target = get_field(song, fields_to_parent, hide_empty=False)
                 setattr(parent_of_target, fields_to_parent[-1], new_field_data)
 
-        def print_metadata(metadata_fields, song, matching_spotify_song):
+        def print_song_metadata(song:Song, matching_spotify_song:dict):
             print("Printing metadata to check. Type a field number and [s]potify's data, or [m]anual input. Or [p]rint this metadata/help again, save and [c]ontinue to next song/operation, or [a]bort all operations. \n" +\
               "For example, \"1s\" selects Spotify's song name. The \"review needed\" flag is cleared upon exit unless you set it with [f]lag. \n" +\
               "You can [a]bort all operations to exit, but changes will still be saved (flag will be left intact). ")
-            for field_number, fields_dict in enumerate(metadata_fields):
+            for field_number, fields_dict in enumerate(song_metadata_fields):
                 field_name = fields_dict["field_name"]
                 field_setter_func = fields_dict['setter']
                 yt_field_list = fields_dict["yt_fields"]
@@ -453,10 +436,10 @@ def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boole
                     field_to_print = str(yt_field) + " (current data)"
                 print(str(field_number + 1) + ". " + field_name + ": " + field_to_print)
 
-        print_metadata(metadata_fields, song, matching_spotify_song)
+        print_song_metadata(song, matching_spotify_song)
 
         # Check fields for empty strings and replace them with None since they're effectively unset
-        for selected_field_number, fields_dict in enumerate(metadata_fields):
+        for selected_field_number, fields_dict in enumerate(song_metadata_fields):
             if fields_dict['type'] is str:
                 yt_field_list = fields_dict["yt_fields"]
                 field_setter_func = fields_dict['setter']
@@ -497,7 +480,7 @@ def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boole
 
             # Print metadata
             elif user_input == 'p':
-                print_metadata(metadata_fields, song, matching_spotify_song)
+                print_song_metadata(song, matching_spotify_song)
 
             # User must be commanding an edit
             else:
@@ -509,8 +492,8 @@ def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boole
                 except (AssertionError, ValueError):
                     print("Invalid command, try again? ")
                     continue
-                if selected_field_number >= 0 and selected_field_number < len(metadata_fields):
-                    fields_dict = metadata_fields[selected_field_number]
+                if selected_field_number >= 0 and selected_field_number < len(song_metadata_fields):
+                    fields_dict = song_metadata_fields[selected_field_number]
                     field_name = fields_dict["field_name"]
                     yt_field_list = fields_dict["yt_fields"]
                     sp_field_list = fields_dict["sp_fields"]
@@ -530,12 +513,15 @@ def process_song_metadata(song:Song, search_spotify:Boolean, edit_metadata:Boole
                         if field_type == bool:
                             new_field_data = prompt_user_for_bool(field_name + " ", True)
                         else:
+                            # Keep prompting the user for input until it is valid
                             while True:
                                 new_field_data = input(field_name + ": ")
+
                                 # Empty string means no data, which we support as "None"
                                 if new_field_data == '':
                                     new_field_data = None
                                     break
+
                                 # Convert input if necessary
                                 if field_type == float:
                                     try:
@@ -576,6 +562,7 @@ def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
         songs_file.close()
 
     # Load playlist files
+    # TODO later: switch from glob to os to reduce imports
     playlist_files = glob.glob(PLAYLIST_FILE_PREFIX + '*' + PLAYLIST_FILE_EXTENSION, dir_fd=glob.glob(path)[0])
     playlists_db = dict()
     for playlist_file_name in playlist_files:
