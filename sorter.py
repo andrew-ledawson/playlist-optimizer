@@ -1,5 +1,9 @@
 from foundation import *
 
+import random
+
+random.seed()
+
 def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     """Computes the similarity of songs and returns a score between 1.0 and 0.0.
        The similarity score is 35% key, 30% BPM, and 35% user ratings.
@@ -34,5 +38,28 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
 
 # TODO: load playlist
 # TODO: validate metadata for songs
-# TODO: execute solve
+# TODO: do scipy solve, probably basinhopping
+def solve_for_playlist_order():
+    starting_playlist_order = []
+    def get_current_optimality(current_playlist : list[Song]):
+        # Gets total optimality score of the current playlist order
+        # We will treat playlists as a loop, i.e. the last song will loop around to the first
+        score = 0
+        for current_song_index in range(-1, len(current_playlist) - 1):
+            score = score + get_similarity_score_v1(current_playlist[current_song_index], current_playlist[current_song_index + 1])
+        return score
+    def take_step(stepsize, current_playlist : list[Song]):
+        # Takes a step (i.e. generates a new solution) by swapping two songs
+        # "Step size" determines how far a song can be swapped in the playlist
+        # Randomly select a song
+        swap_song_source_index = random.randint(0, len(current_playlist) - 1)
+        # Move it a random distance backward or forward
+        swap_song_dest_index = swap_song_source_index + random.randint(-1 * int(stepsize), int(stepsize))
+        # TODO: fix out of bounds indices
+        # Do the swap
+        current_playlist[swap_song_dest_index], current_playlist[swap_song_source_index] = current_playlist[swap_song_source_index], current_playlist[swap_song_dest_index]
+    # Starting/maximum step size will be len(playlist)/2
+    # TODO: ensure step size doesn't drop below 1.0
+    pass
+
 # TODO: put result into YTM
