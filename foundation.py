@@ -40,8 +40,8 @@ CAMELOT_POSITIONS = 12
 MIN_PYTHON = (3, 6)
 if sys.version_info < MIN_PYTHON:
     sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
-else:
-    print("Starting playlist optimizer core functions")
+
+print("Starting playlist optimizer libraries and foundation functions.")
 
 # Init YouTube Music and Spotify API libraries
 YTM = YTMusic('headers_auth.json')
@@ -628,3 +628,6 @@ def prompt_for_playlist(playlists_db : dict[str, Playlist], prompt_message : str
         selected_playlist = list(playlists_db.values())[int(selection) - 1]
         selected_song_ids = selected_playlist.song_ids
     return selected_song_ids
+
+if not prompt_user_for_bool(message="Okay to access Spotify API and YouTube Music browser API using supplied credentials? ", allow_no_response=False):
+    sys.exit("Aborting launch.\n")
