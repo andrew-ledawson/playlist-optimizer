@@ -9,8 +9,8 @@ print("Make sure that the contents of an FFMPEG release are in a folder named \"
 playlists_db, songs_db = load_data_files()
 
 # Prompt user to select playlist
-prompt_message = "\nEnter a playlist number to rate, or enter nothing to rate all songs in database. "
-selected_song_ids = prompt_for_playlist(playlists_db, prompt_message)
+print("\nEnter a playlist number to rate, or enter nothing to rate all songs in database. ")
+selected_song_ids = prompt_for_playlist(playlists_db).song_ids
 if selected_song_ids is None:
     selected_song_ids = songs_db.keys()
 

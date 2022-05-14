@@ -4,8 +4,8 @@ print("Metadata fixer")
 
 playlists_db, songs_db = load_data_files()
 
-prompt_message = "\nEnter a playlist number to rate, or enter nothing to rate all songs in database. "
-song_ids_to_check = prompt_for_playlist(playlists_db, prompt_message)
+print("\nEnter a playlist number to rate, or enter nothing to rate all songs in database. ")
+song_ids_to_check = prompt_for_playlist(playlists_db).song_ids
 if song_ids_to_check is None:
     song_ids_to_check = songs_db.keys()
 
@@ -25,7 +25,7 @@ for song_id in song_ids_to_check:
         if check_result is None:
             break
 
-# TODO later: Make "private fixer" that checks video ID against YouTube, prompts if private, and offers to update remote playlist
+# TODO later: Make "private song fixer" that checks video ID against YouTube, prompts if private, and offers to update remote playlist
 
 print("Processed " + str(num_songs_processed) + " songs; saving song database and exiting. ")
 cleanup_songs_db(songs_db, playlists_db)
