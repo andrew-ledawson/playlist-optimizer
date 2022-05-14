@@ -6,7 +6,12 @@ from foundation import *
 playlists_db, songs_db = load_data_files()
 
 # Go through each user playlist on YouTube Music
-playlist_limit = int(input("How many of your playlists to load from YouTube Music? "))
+playlist_limit = 0
+while playlist_limit <= 0:
+    try:
+        playlist_limit = int(input("How many of your playlists to load from YouTube Music? "))
+    except:
+        print("Invalid number? ")
 ytm_playlists = run_API_request(lambda : YTM.get_library_playlists(limit=playlist_limit), "to load YouTube Music library playlists")
 print("Got " + str(len(ytm_playlists)) + " playlists from YouTube Music. ")
 print("What author's playlists should be downloaded from your YouTube Music Library? Check by opening one of the playlists on music.youtube.com and looking at the author name (directly below the playlist name). ")
@@ -48,7 +53,8 @@ for candidate_playlist in ytm_playlists:
             local_song = Song()
             local_song.yt_id = playlist_song['videoId']
             if local_song.yt_id not in songs_db:
-                local_song.album = playlist_song['album']['name']
+                if playlist_song['album'] is not None:
+                    local_song.album = playlist_song['album']['name']
                 local_song.artist = playlist_song['artists'][0]['name']
                 local_song.name = playlist_song['title']
                 if 'duration' in playlist_song:
