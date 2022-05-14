@@ -71,7 +71,7 @@ def solve_for_playlist_order():
     pass
 
 sorted_playlist_name = selected_playlist.name + " (sorted on " + time.ctime*() + ")"
-playlist_id = run_API_request(lambda : YTM.create_playlist(title=sorted_playlist_name, video_ids=sorted_songs), "to create a playlist with the sorted songs")
+playlist_id = run_API_request(lambda : YTM.create_playlist(title=sorted_playlist_name, video_ids=sorted_songs), "to create a YouTube Music playlist with the sorted songs")
 print("Sorted playlist created at https://music.youtube.com/playlist?list=" + playlist_id)
 
 # TODO: support modifying existing playlist

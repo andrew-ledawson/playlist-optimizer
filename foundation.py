@@ -64,9 +64,9 @@ if not os.path.exists(YTM_AUTH_FILE):
     print("YTM does not appear to be set up because the headers file was not found.  Follow the instructions at https://ytmusicapi.readthedocs.io/en/latest/setup.html")
     YTMusic.setup(filepath=YTM_AUTH_FILE)
 YTM = YTMusic(YTM_AUTH_FILE)
-# TODO: detect Spotify auth issues
+# TODO: Migrate spotify creds to a file
 SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="CLIENT_ID",
-                                               client_secret="CLIENT_SECRETBA",#"BA" added at end to intentionally fail
+                                               client_secret="CLIENT_SECRET",
                                                redirect_uri="http://www.example.com/",
                                                scope="user-library-read"))
 
@@ -110,8 +110,8 @@ def run_API_request(operation : Callable, description="an unknown web request"):
                 OPS_SINCE_BACKOFF = 0
                 print("Temporarily spacing out requests by " + str(TIME_BETWEEN_OPS) + " seconds... ")
             OPS_SINCE_BACKOFF = 0
-            if "Unauthorized" in str(error):
-                print("This may be an authorization error, so consider removing the respective file to set up again. ")
+            if "Unauthorized" in str(error) or type(error) in [spotipy.oauth2.SpotifyOauthError, spotipy.oauth2.SpotifyStateError]:
+                print("This may be an authorization error, so consider removing the authorization file to set up again. ")
     if result is None:
         print("Exceeded retries. Continuing... ")
     return result
@@ -274,7 +274,7 @@ def process_song_metadata(song:Song, search_spotify:bool, edit_metadata:bool, ge
         strict_time_matching = True
         user_search_string = "" 
         while True:
-            search_results = run_API_request(lambda : SP.search(query_string, type='track'), "a Spotify search")
+            search_results = run_API_request(lambda : SP.search(query_string, type='track'), "to search for a matching song on Spotify")
 
             # Results were returned, check them
             if search_results and len(search_results['tracks']['items']) > 0:
