@@ -5,4 +5,5 @@ songs.yts
 songs.yts.bak
 ffmpeg/
 yt-dlp.exe
-*cookies.txt
+cookies.txt
+headers_auth.json
