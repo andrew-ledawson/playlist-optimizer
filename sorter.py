@@ -3,6 +3,13 @@ from foundation import *
 import random
 
 random.seed()
+playlists_db, songs_db = load_data_files()
+
+selected_playlist = None
+while selected_playlist is None:
+    print("\nSelect a playlist to sort: ")
+    selected_playlist = prompt_for_playlist(playlists_db)
+original_songs = sorted_songs = selected_playlist.song_ids
 
 def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     """Computes the similarity of songs and returns a score between 1.0 and 0.0.
@@ -39,6 +46,7 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
 # TODO: load playlist
 # TODO: validate metadata for songs
 # TODO: do scipy solve, probably basinhopping
+# TODO: avoid strongly connected vertices?
 def solve_for_playlist_order():
     starting_playlist_order = []
     def get_current_optimality(current_playlist : list[Song]):
@@ -62,4 +70,10 @@ def solve_for_playlist_order():
     # TODO: ensure step size doesn't drop below 1.0
     pass
 
-# TODO: put result into YTM
+sorted_playlist_name = selected_playlist.name + " (sorted on " + time.ctime*() + ")"
+playlist_id = run_API_request(lambda : YTM.create_playlist(title=sorted_playlist_name, video_ids=sorted_songs), "to create a playlist with the sorted songs")
+print("Sorted playlist created at https://music.youtube.com/playlist?list=" + playlist_id)
+
+# TODO: support modifying existing playlist
+# need to do minimum number of moves to transform existing playlist into new order
+# need to get setVideoId of every song to enable sorting (it's next to the song metadata in the YTM response)
