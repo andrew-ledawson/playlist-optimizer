@@ -2,10 +2,6 @@ import os
 
 from foundation import *
 
-# Launch and auth YouTube Music and Spotify
-print("Playlist metadata collector")
-print("Gets playlists by a particular user from your YouTube Music library and downloads information on the songs.")
-
 # Check which playlists are already saved
 playlists_db, songs_db = load_data_files()
 
@@ -15,6 +11,8 @@ ytm_playlists = run_API_request(lambda : YTM.get_library_playlists(limit=playlis
 print("Got " + str(len(ytm_playlists)) + " playlists from YouTube Music. ")
 print("What author's playlists should be downloaded from your YouTube Music Library? Check by opening one of the playlists on music.youtube.com and looking at the author name (directly below the playlist name). ")
 user_name = input("Account name or channel ID: ")
+
+overwrite_all_playlists = prompt_user_for_bool(message="Redownload and overwrite playlists that are already saved? Leave answer empty to prompt for every playlist. ", allow_no_response=True)
 
 num_playlists_processed = 0
 
@@ -31,8 +29,8 @@ for candidate_playlist in ytm_playlists:
         print("Found playlist \"" + local_playlist.name + "\". ")
 
         # Check if playlist is already downloaded and prompt to update it (i.e. replace it)
-        if local_playlist.yt_id in playlists_db:
-            if not prompt_user_for_bool("Playlist was already downloaded. Overwrite? "):
+        if overwrite_all_playlists is True or local_playlist.yt_id in playlists_db:
+            if overwrite_all_playlists is False or not prompt_user_for_bool("Playlist was already downloaded. Overwrite? "):
                 continue
 
         # Get songs in the playlist
