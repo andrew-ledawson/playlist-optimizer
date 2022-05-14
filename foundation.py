@@ -32,6 +32,7 @@ MAX_SONG_TIME_DIFFERENCE = 2
 PLAYLIST_FILE_PREFIX = 'playlist_'
 PLAYLIST_FILE_EXTENSION = '.ytp'
 SONG_DB_FILE = 'songs.yts'
+YTM_AUTH_FILE = 'headers_auth.json'
 
 # Constants for logic
 CAMELOT_POSITIONS = 12
@@ -41,12 +42,31 @@ MIN_PYTHON = (3, 6)
 if sys.version_info < MIN_PYTHON:
     sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
 
+def prompt_user_for_bool(message:str, allow_no_response = False) -> bool:
+    """Prompts the user to respond to a message with 'y' or 'n', or optionally no response"""
+    user_input = None
+    input_options_string = "[y]es/[n]o/[empty]" if allow_no_response else "[y]es/[n]o"
+    while user_input != 'y' and user_input != 'n' and not (allow_no_response and user_input == ""):
+        user_input = input(message + "(" + input_options_string + "): ")
+    if user_input == 'y':
+        return True
+    if user_input == 'n':
+        return False
+    return None
+
 print("Starting playlist optimizer libraries and foundation functions.")
+if not prompt_user_for_bool(message="Okay to access Spotify API and YouTube Music browser API using supplied credentials? ", allow_no_response=False):
+    sys.exit("Aborting launch.\n")
 
 # Init YouTube Music and Spotify API libraries
-YTM = YTMusic('headers_auth.json')
+#YTM = YTMusic('headers_auth.json')
+if not os.path.exists(YTM_AUTH_FILE):
+    print("YTM does not appear to be set up because the headers file was not found.  Follow the instructions at https://ytmusicapi.readthedocs.io/en/latest/setup.html")
+    YTMusic.setup(filepath=YTM_AUTH_FILE)
+YTM = YTMusic(YTM_AUTH_FILE)
+# TODO: detect Spotify auth issues
 SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="CLIENT_ID",
-                                               client_secret="CLIENT_SECRET",
+                                               client_secret="CLIENT_SECRETBA",#"BA" added at end to intentionally fail
                                                redirect_uri="http://www.example.com/",
                                                scope="user-library-read"))
 
@@ -55,11 +75,13 @@ LAST_OP_TIME = time.time()
 TIME_BETWEEN_OPS = DEFAULT_TIME_BETWEEN_OPS = 1
 OPS_SINCE_BACKOFF = 0
 OPS_TO_RESTORE_BACKOFF = 20
+OPS_TO_INCREASE_BACKOFF = 5
 MAX_TIME_MULTIPLIER = 32
 def run_API_request(operation : Callable, description="an unknown web request"):
     """Runs a lamba (presumably containing an API call) and returns its result.
        Keeps a rate limit and backs off upon exceptions."""
     global LAST_OP_TIME, TIME_BETWEEN_OPS, OPS_SINCE_BACKOFF, DEFAULT_TIME_BETWEEN_OPS, OPS_TO_RESTORE_BACKOFF, MAX_TIME_MULTIPLIER
+    attempt_count = 0
 
     # Check if it's safe to try faster requests
     if TIME_BETWEEN_OPS != DEFAULT_TIME_BETWEEN_OPS and OPS_SINCE_BACKOFF > OPS_TO_RESTORE_BACKOFF:
@@ -73,16 +95,25 @@ def run_API_request(operation : Callable, description="an unknown web request"):
             remaining_time = (LAST_OP_TIME + TIME_BETWEEN_OPS) - time.time()
             if remaining_time > 0:
                 time.sleep(remaining_time)
+            LAST_OP_TIME = time.time()
+            attempt_count = attempt_count + 1
+
             result = operation()
             OPS_SINCE_BACKOFF = OPS_SINCE_BACKOFF + 1
-        except:
+        except Exception as error:
+            print("Error encountered while attempting " + description + ". ")
             if TIME_BETWEEN_OPS == DEFAULT_TIME_BETWEEN_OPS * MAX_TIME_MULTIPLIER:
                 break
+            if attempt_count > OPS_TO_INCREASE_BACKOFF:
+                attempt_count = 0
+                TIME_BETWEEN_OPS = TIME_BETWEEN_OPS * 2
+                OPS_SINCE_BACKOFF = 0
+                print("Temporarily spacing out requests by " + str(TIME_BETWEEN_OPS) + " seconds... ")
             OPS_SINCE_BACKOFF = 0
-            print("Error found while attempting " + description + ". Temporarily spacing out requests by " + str(TIME_BETWEEN_OPS) + " seconds... ")
+            if "Unauthorized" in str(error):
+                print("This may be an authorization error, so consider removing the respective file to set up again. ")
     if result is None:
         print("Exceeded retries. Continuing... ")
-    LAST_OP_TIME = time.time()
     return result
 
 """
@@ -208,14 +239,6 @@ class Song:
 """
 Global funtions
 """
-
-def prompt_user_for_bool(message:str, allow_no_response = False) -> bool:
-    """Prompts the user to respond to a message with 'y' or 'n', or optionally no response"""
-    user_input = None
-    input_options_string = "[y]es/[n]o/[empty]" if allow_no_response else "[y]es/[n]o"
-    while user_input != 'y' and user_input != 'n' and not (allow_no_response and user_input == ""):
-        user_input = input(message + "(" + input_options_string + "): ")
-    return user_input == 'y'
 
 def download_metadata_from_YT_id(id:str) -> Song:
     """Takes a YouTube song ID and gets basic metadata (using a direct lookup endpoint). 
@@ -615,19 +638,11 @@ def cleanup_songs_db(songs_db : dict[str, Song], playlists_db : dict[str, Playli
                 songs_db.pop(song_id)
     return songs_db
 
-def prompt_for_playlist(playlists_db : dict[str, Playlist], prompt_message : str = "Pick a playlist or enter nothing for all songs: ") -> list[str]:
+def prompt_for_playlist(playlists_db : dict[str, Playlist]) -> Playlist:
     """Prompts user to select playlists from the given dict. Allows user to select none to load all songs."""
-    print(prompt_message)
     for number, playlist in enumerate(list(playlists_db.values())):
         print(str(number + 1) + ": " + playlist.name)
-    selected_song_ids = list()
     selection = input("Playlist: ")
-    if selection == "":
-        selected_song_ids = None
-    else:
-        selected_playlist = list(playlists_db.values())[int(selection) - 1]
-        selected_song_ids = selected_playlist.song_ids
-    return selected_song_ids
-
-if not prompt_user_for_bool(message="Okay to access Spotify API and YouTube Music browser API using supplied credentials? ", allow_no_response=False):
-    sys.exit("Aborting launch.\n")
+    if selection != "":
+        return list(playlists_db.values())[int(selection) - 1]
+    return None
