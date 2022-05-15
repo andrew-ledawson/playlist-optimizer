@@ -50,12 +50,12 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
 def solve_for_playlist_order():
     starting_playlist_order = []
     def get_current_optimality(current_playlist : list[Song]):
-        # Gets total optimality score of the current playlist order
+        # Gets total optimality score of the current playlist order, inverted so lowest is best
         # We will treat playlists as a loop, i.e. the last song will loop around to the first
         score = 0
         for current_song_index in range(-1, len(current_playlist) - 1):
             score = score + get_similarity_score_v1(current_playlist[current_song_index], current_playlist[current_song_index + 1])
-        return score
+        return float(len(original_songs)) - score
     def take_step(stepsize, current_playlist : list[Song]):
         # Takes a step (i.e. generates a new solution) by swapping two songs
         # "Step size" determines how far a song can be swapped in the playlist
