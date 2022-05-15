@@ -55,13 +55,13 @@ def prompt_user_for_bool(message:str, allow_no_response = False) -> bool:
     return None
 
 print("Starting playlist optimizer libraries and foundation functions.")
-if not prompt_user_for_bool(message="Okay to access Spotify API and YouTube Music browser API using supplied credentials? ", allow_no_response=False):
+if not prompt_user_for_bool(message="Okay to access Spotify API and emulate YouTube Music client? ", allow_no_response=False):
     sys.exit("Aborting launch.\n")
 
 # Init YouTube Music and Spotify API libraries
 #YTM = YTMusic('headers_auth.json')
 if not os.path.exists(YTM_AUTH_FILE):
-    print("YTM does not appear to be set up because the headers file was not found.  Follow the instructions at https://ytmusicapi.readthedocs.io/en/latest/setup.html")
+    print("YouTube Music header file not found. Starting setup; follow the instructions at https://ytmusicapi.readthedocs.io/en/latest/setup.html")
     YTMusic.setup(filepath=YTM_AUTH_FILE)
 YTM = YTMusic(YTM_AUTH_FILE)
 # TODO: Migrate spotify creds to a file
