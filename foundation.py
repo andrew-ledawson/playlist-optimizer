@@ -1,5 +1,6 @@
 # Basic Python imports
 import glob, pickle, os, re, sys, time
+import json
 from functools import total_ordering
 from typing import Callable
 
@@ -33,6 +34,7 @@ PLAYLIST_FILE_PREFIX = 'playlist_'
 PLAYLIST_FILE_EXTENSION = '.ytp'
 SONG_DB_FILE = 'songs.yts'
 YTM_AUTH_FILE = 'headers_auth.json'
+SPOTIFY_AUTH_FILE = 'spotify.json'
 
 # Constants for logic
 CAMELOT_POSITIONS = 12
@@ -55,20 +57,35 @@ def prompt_user_for_bool(message:str, allow_no_response = False) -> bool:
     return None
 
 print("Starting playlist optimizer libraries and foundation functions.")
-if not prompt_user_for_bool(message="Okay to access Spotify API and emulate YouTube Music client? ", allow_no_response=False):
-    sys.exit("Aborting launch.\n")
+if not prompt_user_for_bool(message="Okay to access Spotify API and emulate a YouTube Music client? ", allow_no_response=False):
+    sys.exit("Permission denied, aborting.\n")
 
-# Init YouTube Music and Spotify API libraries
-#YTM = YTMusic('headers_auth.json')
+# Init YouTube Music library
 if not os.path.exists(YTM_AUTH_FILE):
     print("YouTube Music header file not found. Starting setup; follow the instructions at https://ytmusicapi.readthedocs.io/en/latest/setup.html")
     YTMusic.setup(filepath=YTM_AUTH_FILE)
 YTM = YTMusic(YTM_AUTH_FILE)
-# TODO: Migrate spotify creds to a file
-SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="CLIENT_ID",
-                                               client_secret="CLIENT_SECRET",
-                                               redirect_uri="http://www.example.com/",
+
+# Load Spotify creds from file and init "Spotipy" library
+spotify_creds_file = open('./' + SPOTIFY_AUTH_FILE, "wb")
+spotify_creds = json.load(spotify_creds_file)
+# Validate fields in spotify 
+spotify_cred_fields = ["client_id", "client_secret", "redirect_uri"]
+spotify_creds_file_needs_update = False
+for spotify_field in spotify_cred_fields:
+    if spotify_field not in spotify_creds:
+        spotify_creds[spotify_field] = ""
+        spotify_creds_file_needs_update = True
+if spotify_creds_file_needs_update:
+    json.dump(spotify_creds, spotify_creds_file)
+    spotify_creds_file.close()
+    print("Please register an application at https://developer.spotify.com/dashboard/applications and put its credentials into " + SPOTIFY_AUTH_FILE)
+    sys.exit("Please relaunch after updating credentials.\n")
+SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=spotify_creds["client_id"],
+                                               client_secret=spotify_creds["client_secret"],
+                                               redirect_uri=spotify_creds["redirect_uri"],
                                                scope="user-library-read"))
+spotify_creds_file.close()
 
 # Variables and function to ensure API calls avoid rate limiting
 LAST_OP_TIME = time.time()
