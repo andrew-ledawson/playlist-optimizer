@@ -66,10 +66,24 @@ if not os.path.exists(YTM_AUTH_FILE):
     YTMusic.setup(filepath=YTM_AUTH_FILE)
 YTM = YTMusic(YTM_AUTH_FILE)
 
-# Load Spotify creds from file and init "Spotipy" library
-spotify_creds_file = open('./' + SPOTIFY_AUTH_FILE, "wb")
-spotify_creds = json.load(spotify_creds_file)
-# Validate fields in spotify 
+# Load Spotify creds from JSON file and init "Spotipy" library
+spotify_creds_file = None
+spotify_creds = {}
+try:
+    # Try loading existing file
+    spotify_creds_file = open('./' + SPOTIFY_AUTH_FILE, "rt")
+    spotify_creds = json.load(spotify_creds_file)
+    spotify_creds_file.close()
+except FileNotFoundError:
+    # File does not exist, write a new one
+    spotify_creds_file = open('./' + SPOTIFY_AUTH_FILE, "xt")
+    spotify_creds_file.write("{}")
+    spotify_creds_file.close()
+except json.JSONDecodeError:
+    spotify_creds_file.close()
+    sys.exit("Spotify credential file\"" + SPOTIFY_AUTH_FILE + "\" could not be read, exiting. Consider moving/deleting it so a new file can be put in its place. \n")
+
+# Validate fields in config file
 spotify_cred_fields = ["client_id", "client_secret", "redirect_uri"]
 spotify_creds_file_needs_update = False
 for spotify_field in spotify_cred_fields:
@@ -77,15 +91,16 @@ for spotify_field in spotify_cred_fields:
         spotify_creds[spotify_field] = ""
         spotify_creds_file_needs_update = True
 if spotify_creds_file_needs_update:
+    spotify_creds_file = open('./' + SPOTIFY_AUTH_FILE, "wt")
     json.dump(spotify_creds, spotify_creds_file)
     spotify_creds_file.close()
-    print("Please register an application at https://developer.spotify.com/dashboard/applications and put its credentials into " + SPOTIFY_AUTH_FILE)
+    print("Please have an application registered at https://developer.spotify.com/dashboard/applications and put its credentials into \"" + SPOTIFY_AUTH_FILE + "\". ")
     sys.exit("Please relaunch after updating credentials.\n")
+
 SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=spotify_creds["client_id"],
                                                client_secret=spotify_creds["client_secret"],
                                                redirect_uri=spotify_creds["redirect_uri"],
                                                scope="user-library-read"))
-spotify_creds_file.close()
 
 # Variables and function to ensure API calls avoid rate limiting
 LAST_OP_TIME = time.time()
