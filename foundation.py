@@ -38,6 +38,9 @@ SPOTIFY_AUTH_FILE = 'spotify.json'
 
 # Constants for logic
 CAMELOT_POSITIONS = 12
+MIN_BPM = 90 # Inclusive
+MAX_BPM = 180 # Exclusive
+assert MIN_BPM * 2 == MAX_BPM, "BPM range is invalid"
 
 # Check Python version on init because this uses ordered dicts
 MIN_PYTHON = (3, 6)
@@ -191,10 +194,10 @@ class Song:
     def set_bpm(self, bpm : float):
         if bpm is not None:
             assert bpm is None or bpm > 0, "BPM must be a positive value"
-            # Keep BPM consistent between 90 and 180
-            while bpm < 90:
+            # Keep BPM in the same range/scale
+            while bpm < MIN_BPM:
                 bpm = bpm * 2
-            while bpm >= 180:
+            while bpm >= MAX_BPM:
                 bpm = bpm / 2
         self.bpm = bpm
 

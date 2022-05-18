@@ -1,6 +1,6 @@
 from foundation import *
 
-import random
+import numpi, random, scipy
 
 random.seed()
 playlists_db, songs_db = load_data_files()
@@ -10,6 +10,18 @@ while selected_playlist is None:
     print("\nSelect a playlist to sort: ")
     selected_playlist = prompt_for_playlist(playlists_db)
 original_songs = sorted_songs = selected_playlist.song_ids
+
+def smoothstep(x, x_min=0, x_max=1, N=1):
+    """A sigmoid/s-curve/clamping function that modifies some score.  As the score drops from 1.0, 
+       the smoothed result will gently slope away but begins to ramp up, 
+       then becomes more gentle again as it approaches 0."""
+    # Taken from https://stackoverflow.com/a/45166120
+    x = numpi.clip((x - x_min) / (x_max - x_min), 0, 1)
+    result = 0
+    for n in range(0, N + 1):
+         result += scipy.special.comb(N + n, n) * scipy.special.comb(2 * N + 1, N - n) * (-x) ** n
+    result *= x ** (N + 1)
+    return result
 
 def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     """Computes the similarity of songs and returns a score between 1.0 and 0.0.
@@ -27,11 +39,20 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     if key_subscore < 0.0:
         key_subscore = 0.0
 
-    # TODO: BPM subscore
-    # As BPMs diverge, score reduces in a ramping-up fashion towards 0.0
-    # Make sure to support wrapping BPM around from 180 back to 90
+    # BPM subscore is the difference between BPMs, smoothed
+    # Calculate BPM difference, allowing for "wrapping around"
+    # TODO later: punish "wrapping around" BPM
+    lower_bpm = min(song1.bpm, song2.bpm)
+    higher_bpm = max(song1.bpm, song2.bpm)
+    bpm_difference = min((higher_bpm - lower_bpm, lower_bpm * 2 - higher_bpm))
+    # what is the maximum difference between BPMs?  would be when BPMs were slightly closer over the wraparound than between each other
+    # like (90 * 5/4) - 0.5 and (90 * 7/4) + 0.5: 112 and 158 bpm.  that's 46 between them, 68 when doubling the lower bpm, and 33 when halving the larger bpm
+    # obviously I need to fix my math.  
+    # let's consider more examples.  some DnB songs have BPMs around 82, while a fast-paced edm song might be around 160.  
+    # TODO: Implement smoothstep
+    #bpm_subscore = smoothstep(bpm_difference, x_min=0, x_max=)
 
-    # Average user ratings into a subscore.  For each rating, 1.0 if identical, 0.75 if one apart, etc.
+    # Average all user ratings into a subscore.  Each is 1.0 if identical, 0.75 if one apart, etc.
     user_rating_scores = []
     for rating_key in USER_RATINGS:
         rating_difference = abs(song1.user_ratings[rating_key] - song2.user_ratings[rating_key])
