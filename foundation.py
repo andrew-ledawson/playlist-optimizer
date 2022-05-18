@@ -94,15 +94,16 @@ if spotify_creds_file_needs_update:
     spotify_creds_file = open('./' + SPOTIFY_AUTH_FILE, "wt")
     json.dump(spotify_creds, spotify_creds_file)
     spotify_creds_file.close()
-    print("Please have an application registered at https://developer.spotify.com/dashboard/applications and put its credentials into \"" + SPOTIFY_AUTH_FILE + "\". ")
-    sys.exit("Please relaunch after updating credentials.\n")
+    print("Please put Spotify API credentials into \"" + SPOTIFY_AUTH_FILE + "\". ")
+    print("Get/create credentials at https://developer.spotify.com/dashboard/applications and set the redirect URI to http://localhost")
+    print(" or if using another URL, use your browser's Developer Tools to capture the redirect URL. ")
+    sys.exit("Please relaunch after updating credentials. \n")
 
 SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=spotify_creds["client_id"],
                                                client_secret=spotify_creds["client_secret"],
                                                redirect_uri=spotify_creds["redirect_uri"],
                                                scope="user-library-read"))
 
-# Variables and function to ensure API calls avoid rate limiting
 LAST_OP_TIME = time.time()
 TIME_BETWEEN_OPS = DEFAULT_TIME_BETWEEN_OPS = 1
 OPS_SINCE_BACKOFF = 0
@@ -161,8 +162,8 @@ class Playlist:
 @total_ordering
 class Song:
     """A song (presumably shared between YouTube Music and Spotify)"""
-    # Members are referenced by strings in dict metadata_fields in download_song_features()
-    # so update that when changing member names
+    # Members are referenced by strings in dict metadata_fields in download_song_features(), 
+    # so update that dict when changing member names here. 
     album = None
     artist = None
     name = None
@@ -171,8 +172,7 @@ class Song:
     yt_id = None
     spotify_id = None
     spotify_preview_url = None
-    # None if not downloaded, false if all downloaded, true if downloaded with error
-    metadata_needs_review = None
+    metadata_needs_review = None # None if not downloaded, false if all downloaded, true if downloaded with error
     is_private = None
 
     camelot_position = None
