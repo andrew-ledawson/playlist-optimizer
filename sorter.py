@@ -49,6 +49,8 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     # like (90 * 5/4) - 0.5 and (90 * 7/4) + 0.5: 112 and 158 bpm.  that's 46 between them, 68 when doubling the lower bpm, and 33 when halving the larger bpm
     # obviously I need to fix my math.  
     # let's consider more examples.  some DnB songs have BPMs around 82, while a fast-paced edm song might be around 160.  
+    # I can double the DnB song to be 164 bpm (4 bpm apart), or halve the edm song to be 80 bpm (2 bpm apart). That makes sense.
+    # Now how do I consider wrapping around the BPM when each BPM on the upper end is much more significant than the lower end? 
     # TODO: Implement smoothstep
     #bpm_subscore = smoothstep(bpm_difference, x_min=0, x_max=)
 
