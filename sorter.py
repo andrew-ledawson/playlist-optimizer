@@ -1,7 +1,6 @@
-from textwrap import wrap
 from foundation import *
 
-import numpi, random, scipy
+import numpy, random, scipy.special, scipy.optimize
 
 random.seed()
 playlists_db, songs_db = load_data_files()
@@ -10,14 +9,14 @@ selected_playlist = None
 while selected_playlist is None:
     print("\nSelect a playlist to sort: ")
     selected_playlist = prompt_for_playlist(playlists_db)
-original_songs = sorted_songs = selected_playlist.song_ids
+original_songs = selected_playlist.song_ids.copy()
 
 def smoothstep(x, x_min=0, x_max=1, N=1):
     """A sigmoid/s-curve/clamping function that modifies some score.  As the score drops from 1.0, 
        the smoothed result will gently slope away but begins to ramp up, then becomes more gentle 
-       again as it approaches 0.  N is the number of smoothing passes.  """
-    # Taken from https://stackoverflow.com/a/45166120
-    x = numpi.clip((x - x_min) / (x_max - x_min), 0, 1)
+       again as it approaches 0.  N is the number of smoothing passes.  
+       Taken from https://stackoverflow.com/a/45166120 """
+    x = numpy.clip((x - x_min) / (x_max - x_min), 0, 1)
     result = 0
     for n in range(0, N + 1):
          result += scipy.special.comb(N + n, n) * scipy.special.comb(2 * N + 1, N - n) * (-x) ** n
@@ -55,6 +54,7 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     bpm_subscore = (max_bpm_difference - smoothstep(bpm_difference, x_min=0, x_max=max_bpm_difference)) / max_bpm_difference
 
     # Average all user ratings into a subscore.  Each is 1.0 if identical, 0.75 if one apart, etc.
+    # TODO later: consider ramping the score for point differences, e.g. 1 -> 0.9 -> 0.7 -> 0.4 -> 0
     user_rating_scores = []
     for rating_key in USER_RATINGS:
         rating_difference = abs(song1.user_ratings[rating_key] - song2.user_ratings[rating_key])
@@ -66,19 +66,22 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     
     return (key_subscore * 0.35) + (bpm_subscore * 0.3) + (user_rating_subscore * 0.35)
 
-# TODO: load playlist
-# TODO: validate metadata for songs
-# TODO: do scipy solve, probably basinhopping
-# TODO: avoid strongly connected vertices?
-def solve_for_playlist_order():
-    starting_playlist_order = []
-    def get_current_optimality(current_playlist : list[Song]):
-        # Gets total optimality score of the current playlist order, inverted so lowest is best
-        # We will treat playlists as a loop, i.e. the last song will loop around to the first
+def solve_for_playlist_order() -> scipy.optimize.OptimizeResult:
+    def get_current_optimality(current_playlist : list[str]):
+        # Gets total optimality score of the current ordered playlist
+        # We treat playlists as a loop, i.e. the last song will loop around to the first
         score = 0
+        # Accumulate optimality score between each pair of songs
         for current_song_index in range(-1, len(current_playlist) - 1):
-            score = score + get_similarity_score_v1(current_playlist[current_song_index], current_playlist[current_song_index + 1])
-        return float(len(original_songs)) - score
+            song_0 = songs_db[current_playlist[current_song_index]]
+            song_1 = songs_db[current_playlist[current_song_index + 1]]
+            score = score + get_similarity_score_v1(song_0, song_1)
+        # Invert score so that the lowest possible score is 0
+        # and normalize score so it ranges between 0.0 and 1.0
+        num_songs = float(len(original_songs))
+        return (num_songs - score) / num_songs
+    # TODO: Try more advaced stepping (perhaps shuffle multiple songs per step)
+    # Starting/maximum step size will be len(playlist)/2
     def take_step(stepsize, current_playlist : list[Song]):
         # Takes a step (i.e. generates a new solution) by swapping two songs
         # "Step size" determines how far a song can be swapped in the playlist
@@ -86,17 +89,20 @@ def solve_for_playlist_order():
         swap_song_source_index = random.randint(0, len(current_playlist) - 1)
         # Move it a random distance backward or forward
         swap_song_dest_index = swap_song_source_index + random.randint(-1 * int(stepsize), int(stepsize))
-        # TODO: fix out of bounds indices
+        # Wrap around from end of playlist to beginning
+        if swap_song_dest_index >= len(current_playlist):
+            swap_song_dest_index = swap_song_dest_index - len(current_playlist)
         # Do the swap
         current_playlist[swap_song_dest_index], current_playlist[swap_song_source_index] = current_playlist[swap_song_source_index], current_playlist[swap_song_dest_index]
-    # Starting/maximum step size will be len(playlist)/2
-    # TODO: ensure step size doesn't drop below 1.0
-    pass
+    return scipy.optimize.basinhopping(func=get_current_optimality, x0=original_songs, disp=True)
+
+sort_result = solve_for_playlist_order()
+sorted_songs = sort_result.x
 
 sorted_playlist_name = selected_playlist.name + " (sorted on " + time.ctime*() + ")"
 playlist_id = run_API_request(lambda : YTM.create_playlist(title=sorted_playlist_name, video_ids=sorted_songs), "to create a YouTube Music playlist with the sorted songs")
 print("Sorted playlist created at https://music.youtube.com/playlist?list=" + playlist_id)
 
-# TODO: support modifying existing playlist
+# TODO later: support modifying existing playlist
 # need to do minimum number of moves to transform existing playlist into new order
 # need to get setVideoId of every song to enable sorting (it's next to the song metadata in the YTM response)
