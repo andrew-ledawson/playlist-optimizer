@@ -33,10 +33,10 @@ for candidate_playlist in ytm_playlists:
     if local_playlist_author_name == user_name or local_playlist_author_id == user_name:
         print("Found playlist \"" + local_playlist.name + "\". ")
 
-        # Check if playlist is already downloaded and prompt to update it (i.e. replace it)
-        if overwrite_all_playlists is True or local_playlist.yt_id in playlists_db:
+        # Skip this playlist if it was already downloaded and should not be replaced
+        if overwrite_all_playlists is not True and local_playlist.yt_id in playlists_db:
             if overwrite_all_playlists is False or not prompt_user_for_bool("Playlist was already downloaded. Overwrite? "):
-                continue
+                continue # Skip to next playlist
 
         # Get songs in the playlist
         remote_playlist_contents = run_API_request(lambda : YTM.get_playlist(playlistId=local_playlist.yt_id, limit=int(candidate_playlist['count']) + 1), "to get the songs for YouTube Music playlist \"" + local_playlist.name + "\"")
