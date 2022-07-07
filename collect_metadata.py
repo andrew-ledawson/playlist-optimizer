@@ -35,13 +35,16 @@ for candidate_playlist in ytm_playlists:
 
         # Skip this playlist if it was already downloaded and should not be replaced
         if overwrite_all_playlists is not True and local_playlist.yt_id in playlists_db:
-            if overwrite_all_playlists is False or not prompt_user_for_bool("Playlist was already downloaded. Overwrite? "):
+            if overwrite_all_playlists is False or not prompt_user_for_bool("Playlist \"" + local_playlist.name + "\" was already downloaded. Overwrite? "):
                 continue # Skip to next playlist
+        # Prompt user for playlist if not otherwise asked
+        elif not prompt_user_for_bool("Download playlist \"" + local_playlist.name + "\"? "):
+            continue
 
         # Get songs in the playlist
         remote_playlist_contents = run_API_request(lambda : YTM.get_playlist(playlistId=local_playlist.yt_id, limit=int(candidate_playlist['count']) + 1), "to get the songs for YouTube Music playlist \"" + local_playlist.name + "\"")
         playlist_length = str(len(remote_playlist_contents['tracks']))
-        print("Playlist has " + playlist_length + " songs to check, starting... ")
+        print("Playlist has " + playlist_length + " songs to check, please wait a few moments for each song... ")
 
         # Store song info in a Song object
         for song_count, playlist_song in enumerate(remote_playlist_contents['tracks']):
@@ -79,10 +82,6 @@ for candidate_playlist in ytm_playlists:
         playlists_db[local_playlist.yt_id] = local_playlist
         print("Done processing playlist \"" + local_playlist.name + "\"; saved to folder. ")
         num_playlists_processed = num_playlists_processed + 1
+        write_song_db(songs_db)
 
-        if not prompt_user_for_bool("Want to continue checking additional playlists? "):
-            break
-
-print("Processed " + str(num_playlists_processed) + " playlists; saving song database and exiting. ")
-cleanup_songs_db(songs_db, playlists_db)
-write_song_db(songs_db)
+print("Processed " + str(num_playlists_processed) + " playlists; exiting. ")

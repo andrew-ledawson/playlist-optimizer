@@ -1,28 +1,17 @@
 from foundation import *
 
-saved_playlists, all_songs = load_data_files('.')
+saved_playlists, songs_db = load_data_files('.')
 
-for key, song in all_songs.items():
-    if type(song.album) is dict:
-        song.album = song.album['name']
+selected_playlist = prompt_for_playlist(saved_playlists)
+all_songs_ratings = []
+for song_id in selected_playlist.song_ids:
+    song = songs_db[song_id]
+    if song.user_ratings not in all_songs_ratings:
+        all_songs_ratings.append(song.user_ratings)
+    else:
+        song.user_ratings = dict()
 
-"""ids_to_remove = []
-for id, song in all_songs.items():
-    if type(song) is not Song:
-        ids_to_remove.append(id)
-        print("Popping " + id)
-for id in ids_to_remove:
-    all_songs.pop(id)"""
-
-"""for index, song_a in enumerate(list(all_songs.values())):
-    #song_a.user_ratings = dict()
-    for song_b_index in range(index+1, len(all_songs.values())):
-        song_b = list(all_songs.values())[song_b_index]
-        #print("DEBUG: Checking " + song_a.name + " and " + song_b.name)
-        if song_a.user_ratings is song_b.user_ratings:
-            print("Shared ratings object detected between " + song_a.name + " and " + song_b.name)"""
-
-write_song_db(all_songs)
+write_song_db(songs_db)
 
 """
 song_id = "DwanG6dAl18"

@@ -66,6 +66,8 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     
     return (key_subscore * 0.35) + (bpm_subscore * 0.3) + (user_rating_subscore * 0.35)
 
+# TODO: Can't use this solver, instead, create a traveling salesman solver
+# https://stackoverflow.com/questions/25585401/travelling-salesman-in-scipys
 def solve_for_playlist_order() -> scipy.optimize.OptimizeResult:
     def get_current_optimality(current_playlist : list[str]):
         # Gets total optimality score of the current ordered playlist

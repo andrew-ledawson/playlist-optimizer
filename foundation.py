@@ -110,9 +110,10 @@ SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=spotify_creds["client_i
 LAST_OP_TIME = time.time()
 TIME_BETWEEN_OPS = DEFAULT_TIME_BETWEEN_OPS = 1
 OPS_SINCE_BACKOFF = 0
-OPS_TO_RESTORE_BACKOFF = 20
-OPS_TO_INCREASE_BACKOFF = 5
-MAX_TIME_MULTIPLIER = 32
+OPS_TO_RESTORE_BACKOFF = 5
+OPS_TO_INCREASE_BACKOFF = 3
+MAX_TIME_MULTIPLIER = 16
+TIME_MULTIPLICATION_FACTOR = 4
 def run_API_request(operation : Callable, description="an unknown web request"):
     """Runs a lamba (presumably containing an API call) and returns its result.
        Keeps a rate limit and backs off upon exceptions."""
@@ -121,7 +122,7 @@ def run_API_request(operation : Callable, description="an unknown web request"):
 
     # Check if it's safe to try faster requests
     if TIME_BETWEEN_OPS != DEFAULT_TIME_BETWEEN_OPS and OPS_SINCE_BACKOFF > OPS_TO_RESTORE_BACKOFF:
-        TIME_BETWEEN_OPS = TIME_BETWEEN_OPS / 2
+        TIME_BETWEEN_OPS = TIME_BETWEEN_OPS / TIME_MULTIPLICATION_FACTOR
         OPS_SINCE_BACKOFF = 0
 
     # Run the operation, retrying on exceptions
@@ -142,7 +143,7 @@ def run_API_request(operation : Callable, description="an unknown web request"):
                 break
             if attempt_count > OPS_TO_INCREASE_BACKOFF:
                 attempt_count = 0
-                TIME_BETWEEN_OPS = TIME_BETWEEN_OPS * 2
+                TIME_BETWEEN_OPS = TIME_BETWEEN_OPS * TIME_MULTIPLICATION_FACTOR
                 OPS_SINCE_BACKOFF = 0
                 print("Temporarily spacing out requests by " + str(TIME_BETWEEN_OPS) + " seconds... ")
             OPS_SINCE_BACKOFF = 0
@@ -309,6 +310,7 @@ def process_song_metadata(song:Song, search_spotify:bool, edit_metadata:bool, ge
         strict_time_matching = True
         user_search_string = "" 
         while True:
+            # TODO: Why no prompt for song name after exceeding HTTP errors?
             search_results = run_API_request(lambda : SP.search(query_string, type='track'), "to search for a matching song on Spotify")
 
             # Results were returned, check them
@@ -455,9 +457,9 @@ def process_song_metadata(song:Song, search_spotify:bool, edit_metadata:bool, ge
                 field_setter_func(new_field_data)
             else:
                 # No setter func, so get the parent and set its child value
-                fields_to_parent = [yt_field_list[field_num] for field_num in range(len(yt_field_list) - 1)]
-                parent_of_target = get_field(song, fields_to_parent, hide_empty=False)
-                setattr(parent_of_target, fields_to_parent[-1], new_field_data)
+                fields_to_parent = [yt_field_list[field_num] for field_num in range(len(yt_field_list))]
+                #parent_of_target = get_field(song, fields_to_parent, hide_empty=False)
+                setattr(song, fields_to_parent[-1], new_field_data)
 
         def print_song_metadata(song:Song, matching_spotify_song:dict):
             print("Printing metadata to check. Type a field number and [s]potify's data, or [m]anual input. Or [p]rint this metadata/help again, save and [c]ontinue to next song/operation, or [a]bort all operations. \n" +\
