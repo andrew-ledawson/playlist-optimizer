@@ -1,6 +1,6 @@
 from foundation import *
 
-import numpy, random, scipy.special, scipy.optimize
+import numpy, random, scipy.special
 
 random.seed()
 playlists_db, songs_db = load_data_files()
@@ -66,37 +66,53 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     
     return (key_subscore * 0.35) + (bpm_subscore * 0.3) + (user_rating_subscore * 0.35)
 
-# TODO: Can't use this solver, instead, create a traveling salesman solver
-# https://stackoverflow.com/questions/25585401/travelling-salesman-in-scipys
-def solve_for_playlist_order() -> scipy.optimize.OptimizeResult:
-    def get_current_optimality(current_playlist : list[str]):
-        # Gets total optimality score of the current ordered playlist
-        # We treat playlists as a loop, i.e. the last song will loop around to the first
-        score = 0
-        # Accumulate optimality score between each pair of songs
-        for current_song_index in range(-1, len(current_playlist) - 1):
-            song_0 = songs_db[current_playlist[current_song_index]]
-            song_1 = songs_db[current_playlist[current_song_index + 1]]
-            score = score + get_similarity_score_v1(song_0, song_1)
-        # Invert score so that the lowest possible score is 0
-        # and normalize score so it ranges between 0.0 and 1.0
-        num_songs = float(len(original_songs))
-        return (num_songs - score) / num_songs
-    # TODO: Try more advaced stepping (perhaps shuffle multiple songs per step)
-    # Starting/maximum step size will be len(playlist)/2
-    def take_step(stepsize, current_playlist : list[Song]):
-        # Takes a step (i.e. generates a new solution) by swapping two songs
-        # "Step size" determines how far a song can be swapped in the playlist
-        # Randomly select a song
-        swap_song_source_index = random.randint(0, len(current_playlist) - 1)
-        # Move it a random distance backward or forward
-        swap_song_dest_index = swap_song_source_index + random.randint(-1 * int(stepsize), int(stepsize))
-        # Wrap around from end of playlist to beginning
-        if swap_song_dest_index >= len(current_playlist):
-            swap_song_dest_index = swap_song_dest_index - len(current_playlist)
-        # Do the swap
-        current_playlist[swap_song_dest_index], current_playlist[swap_song_source_index] = current_playlist[swap_song_source_index], current_playlist[swap_song_dest_index]
-    return scipy.optimize.basinhopping(func=get_current_optimality, x0=original_songs, disp=True)
+def get_current_similarity_score(song_ids:list) -> float:
+    num_songs = len(song_ids)
+    total_score = 0.0
+    for current_song_index in range(-1, len(song_ids) - 1):
+        song_0 = songs_db[song_ids[current_song_index]]
+        song_1 = songs_db[song_ids[current_song_index + 1]]
+        score = score + get_similarity_score_v1(song_0, song_1)
+    # Normalize score so it ranges between 0.0 and 1.0
+    return score / num_songs
+
+def generate_distance_matrix(song_ids:list) -> list:
+    # TODO: make initial "None" node with 0 distance
+    """
+    Generates an n*n matrix of "distances" between songs in the playlist
+    """
+    song_list_length = len(song_ids)
+
+    # Distance matrix should be less than 1 GiB so it can be easily handled
+    ONE_GIBIBYTE = 1024 * 1024 * 1024
+    FLOAT_SIZE_BYTES = 64 / 8
+    if song_list_length * song_list_length > ONE_GIBIBYTE / FLOAT_SIZE_BYTES:
+        raise Exception("Playlist is too large to easily sort, aborting. ")
+
+    distance_list = []
+    for first_node_index in range(song_list_length):
+        distance_sublist = []
+        for second_node_index in range(song_list_length):
+            # Node already exists on the other side of the matrix; copy it
+            if second_node_index < first_node_index:
+                distance_sublist.append(distance_list[second_node_index][first_node_index])
+            # Distance to self is 0
+            elif second_node_index == first_node_index:
+                distance_sublist.append(0.0)
+            # Haven't calculated this distance yet
+            else:
+                first_song_id = song_ids[first_node_index]
+                second_song_id = song_ids[second_node_index]
+                # Similarity score needs to be inverted to become distance (since a distance of 0 is the most similar)
+                distance_sublist.append(1.0 - get_similarity_score_v1(songs_db[first_song_id], songs_db[second_song_id]))
+        distance_list.append(distance_sublist)
+    return distance_list
+
+# TODO: Remove duplicate songs (and warn user)
+def solve_for_playlist_order():
+    problem = {}
+    problem['distance_matrix'] = generate_distance_matrix()
+    pass
 
 sort_result = solve_for_playlist_order()
 sorted_songs = sort_result.x
