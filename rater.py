@@ -1,4 +1,4 @@
-import json, subprocess
+import json, requests, subprocess
 from foundation import *
 
 print("Song rater")
@@ -61,8 +61,20 @@ if desired_volume > 0:
 
 num_songs_rated = 0
 
+def extract_playback_url_from_json(json):
+    """
+    Parse the response JSON to find preferred audio formats
+    251 is higher quality OPUS audio (for all videos)
+    140 and 141 are YouTube Music AAC formats
+    18 is 360p MP4, a legacy non-DASH video+audio format
+    """
+    for perferred_format in ["251", "140", "141", "18"]:
+        for format_json in json['formats']:
+            if format_json['format_id'] == perferred_format:
+                return format_json['url']
+    return None
+
 # For each song, prompt user to rate on each trait
-# TODO: why does every song share the same ratings struct?
 for index, song_id in enumerate(selected_song_ids):
     should_exit_rating_loop = False
     skip_to_next_song = False
@@ -77,39 +89,47 @@ for index, song_id in enumerate(selected_song_ids):
         player = None
         if desired_volume > 0:
             play_url = None
-            # Try different song IDs as necessary
-            id_candidates = [song_id]
-            for candidate_id in id_candidates:
+            ytdlp_path_candidates = ["ytdlp.exe", "./ytdlp.exe", "ytdlp", "./ytdlp"]
+            for ytdlp_path_index, ytdlp_path in enumerate(ytdlp_path_candidates):
                 try:
                     # TODO: omit ".exe" for non-Windows platforms
-                    yt_manifest_text = subprocess.check_output("./yt-dlp.exe -j " + \
+                    yt_manifest_text = subprocess.check_output(ytdlp_path + " -j " + \
                                                             ("--cookies " + cookies_file_path + " " if cookies_file_path is not None else " ") + \
                                                             "--extractor-args player_client:web_music " + \
                                                             "-- " + song_id)
                     yt_manifest = json.loads(yt_manifest_text)
-
-                    # Parse the response JSON to find preferred audio formats
-                    # 251 is higher quality OPUS audio (for all videos)
-                    # 140 and 141 are YouTube Music AAC formats
-                    # 18 is 360p MP4, a legacy non-DASH video+audio format
-                    for perferred_format in ["251", "140", "141", "18"]:
-                        for format_json in yt_manifest['formats']:
-                            if format_json['format_id'] == perferred_format:
-                                play_url = format_json['url']
+                    play_url = extract_playback_url_from_json(yt_manifest)
+                    if play_url is not None:
+                        break
                 except Exception as error:
                     print("Failed to acquire stream for song sample (ID " + song_id + "). ")
                     if type(error) is FileNotFoundError:
-                        print("Helper program not found, be sure you placed yt-dlp.exe and a copy of the folder \"ffmpeg\" (containing bin/ff*.exe) in this program folder. ")
+                        print("Helper program not found, please install yt-dlp, or be sure you placed yt-dlp.exe in this program folder. ")
                     elif target_song.is_private:
                         print("This is a private song uploaded directly to your account. It cannot be played by this program. ")
             if play_url is None:
                 # If youtube playback isn't available, try Spotify's MP3 preview
                 play_url = target_song.spotify_preview_url
-            # If preview is available, run the 
             if play_url is not None:
-                player = subprocess.Popen("ffmpeg/bin/ffplay.exe " + play_url + " -volume " + str(desired_volume) + " -ss " + str(sample_time_offset) + " -nodisp -loglevel error", stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
-                # TODO: copy exception handling from above
-                # stdout=subprocess.DEVNULL,
+                # Try different ffplay paths
+                ffplay_path_candidates = ["ffplay.exe", "ffmpeg/bin/ffplay.exe", "ffplay", "ffmpeg/bin/ffplay"]
+                for ffplay_path_index, ffplay_path in enumerate(ffplay_path_candidates):
+                    try:
+                        player = subprocess.Popen(ffplay_path + " " + play_url + " -volume " + str(desired_volume) + " -ss " + str(sample_time_offset) + " -nodisp -loglevel error", stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+                        # stdout=subprocess.DEVNULL,
+                        # TODO: Comment out downloader
+                        playback_data_response = requests.get(play_url)
+                        filename = str(num_songs_rated) + target_song.name
+                        with open(filename) as playback_file:
+                            playback_file.write(playback_data_response.content)
+                        break # Player launched successfully, stop trying ffplay paths
+                    except Exception as error:
+                        if ffplay_path_index == len(ffplay_path_candidates) - 1: # Exhausted ffplay paths
+                            print("Failed to play stream for song sample (ID " + song_id + "). ")
+                            if type(error) is FileNotFoundError:
+                                print("Helper program not found, please install ffmpeg and yt-dlp, or be sure you placed yt-dlp.exe and a copy of the folder \"ffmpeg\" (containing bin/ff*.exe) in this program folder. ")
+                            elif target_song.is_private:
+                                print("This is a private song uploaded directly to your account. It cannot be played by this program. ")
 
         target_ratings = target_song.user_ratings
         for trait in USER_RATINGS:
