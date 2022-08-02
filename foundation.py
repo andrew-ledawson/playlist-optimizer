@@ -183,10 +183,12 @@ class Song:
     camelot_is_minor = None
     bpm = None
 
-    user_ratings = dict()
+    user_ratings = None # Can't be empty dict() or pickling turns all empty rating dicts into same instance
 
     def has_latest_ratings(self):
         global USER_RATINGS
+        if self.user_ratings is None:
+            return False
         for trait in USER_RATINGS:
             if trait not in self.user_ratings or self.user_ratings[trait] == None:
                 return False

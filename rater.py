@@ -141,6 +141,9 @@ for index, song_id in enumerate(selected_song_ids):
                                 print("This is a private song uploaded directly to your account. It cannot be played by this program. ")
 
         target_ratings = target_song.user_ratings
+        if target_ratings is None:
+            target_ratings = dict()
+            target_song.user_ratings = target_ratings
         for trait in USER_RATINGS:
             while trait not in target_ratings or target_ratings[trait] is None:
                 try:
@@ -164,7 +167,16 @@ for index, song_id in enumerate(selected_song_ids):
                 print_traits_info()
             num_songs_rated = num_songs_rated + 1
         if player is not None:
-            player.send_signal(1)
+            # TODO: Sometimes termianting the player leaves its child running, try switching from Popen() to run(), and also maybe running process with shell flag enabled
+            # Can't use signal 1, it kills python process
+            for index, signal in enumerate([signal.SIGBREAK, signal.SIGINT, signal.SIGTERM, signal.SIG_DFL]):
+                try:
+                    print("Trying to kill player with signal " + str(index))
+                    player.send_signal(signal)
+                    if player.poll() != None:
+                        break
+                except:
+                    pass
         if should_exit_rating_loop:
             break
         elif skip_to_next_song:
