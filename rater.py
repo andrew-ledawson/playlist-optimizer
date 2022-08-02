@@ -1,4 +1,6 @@
-import json, requests, subprocess
+from asyncio.windows_utils import Popen
+import json, requests, subprocess, time
+import signal
 from foundation import *
 
 print("Song rater")
@@ -71,8 +73,8 @@ def extract_playback_url_from_json(json):
     for perferred_format in ["251", "140", "141", "18"]:
         for format_json in json['formats']:
             if format_json['format_id'] == perferred_format:
-                return format_json['url']
-    return None
+                return format_json['url'], perferred_format
+    return None, None
 
 # For each song, prompt user to rate on each trait
 for index, song_id in enumerate(selected_song_ids):
@@ -89,16 +91,16 @@ for index, song_id in enumerate(selected_song_ids):
         player = None
         if desired_volume > 0:
             play_url = None
-            ytdlp_path_candidates = ["ytdlp.exe", "./ytdlp.exe", "ytdlp", "./ytdlp"]
+            play_format = None
+            ytdlp_path_candidates = ["yt-dlp.exe", "./yt-dlp.exe", "yt-dlp", "./yt-dlp"]
             for ytdlp_path_index, ytdlp_path in enumerate(ytdlp_path_candidates):
                 try:
-                    # TODO: omit ".exe" for non-Windows platforms
                     yt_manifest_text = subprocess.check_output(ytdlp_path + " -j " + \
-                                                            ("--cookies " + cookies_file_path + " " if cookies_file_path is not None else " ") + \
-                                                            "--extractor-args player_client:web_music " + \
-                                                            "-- " + song_id)
+                                                               ("--cookies " + cookies_file_path + " " if cookies_file_path is not None else " ") + \
+                                                               "--extractor-args player_client:web_music " + \
+                                                               "-- " + song_id)
                     yt_manifest = json.loads(yt_manifest_text)
-                    play_url = extract_playback_url_from_json(yt_manifest)
+                    play_url, play_format = extract_playback_url_from_json(yt_manifest)
                     if play_url is not None:
                         break
                 except Exception as error:
@@ -111,17 +113,24 @@ for index, song_id in enumerate(selected_song_ids):
                 # If youtube playback isn't available, try Spotify's MP3 preview
                 play_url = target_song.spotify_preview_url
             if play_url is not None:
+                try:
+                    # TODO: Comment out downloader
+                    playback_data_response = requests.get(play_url)
+                    extension = "webm"
+                    if play_format == 140 or play_format == 141:
+                        extension = "m4a"
+                    illegal_filename = str(num_songs_rated) + " " +  target_song.name
+                    legal_filename = "".join(x for x in illegal_filename if (x.isalnum() or x == ' ')) + "." + extension
+                    with open(legal_filename, "xb") as playback_file:
+                        playback_file.write(playback_data_response.content)
+                except Exception as error:
+                    print("Failed to download song: " + str(error))
                 # Try different ffplay paths
                 ffplay_path_candidates = ["ffplay.exe", "ffmpeg/bin/ffplay.exe", "ffplay", "ffmpeg/bin/ffplay"]
                 for ffplay_path_index, ffplay_path in enumerate(ffplay_path_candidates):
                     try:
                         player = subprocess.Popen(ffplay_path + " " + play_url + " -volume " + str(desired_volume) + " -ss " + str(sample_time_offset) + " -nodisp -loglevel error", stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
                         # stdout=subprocess.DEVNULL,
-                        # TODO: Comment out downloader
-                        playback_data_response = requests.get(play_url)
-                        filename = str(num_songs_rated) + target_song.name
-                        with open(filename) as playback_file:
-                            playback_file.write(playback_data_response.content)
                         break # Player launched successfully, stop trying ffplay paths
                     except Exception as error:
                         if ffplay_path_index == len(ffplay_path_candidates) - 1: # Exhausted ffplay paths
@@ -155,7 +164,7 @@ for index, song_id in enumerate(selected_song_ids):
                 print_traits_info()
             num_songs_rated = num_songs_rated + 1
         if player is not None:
-            player.terminate()
+            player.send_signal(1)
         if should_exit_rating_loop:
             break
         elif skip_to_next_song:
