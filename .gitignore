@@ -1,8 +1,8 @@
 .cache
 __pycache__
 playlist_*.ytp
-songs.yts
-songs.yts.bak
+cached_song_metadata.yts
+cached_song_metadata.yts.bak
 ffmpeg/
 yt-dlp.exe
 cookies.txt

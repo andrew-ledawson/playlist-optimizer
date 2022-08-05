@@ -6,13 +6,13 @@ print("Song rater")
 print("Allows rating songs by certain traits (+2 to -2) while playing a sample of the song. ")
 print("Enter \"e\" in a rating prompt to save and exit and \"s\" to skip to next song. ")
 
-playlists_db, songs_db = load_data_files()
+playlists_db, songs_cache = load_data_files()
 
 # Prompt user to select playlist
-print("\nEnter a playlist number to rate, or enter nothing to rate all songs in database. ")
+print("\nEnter a playlist number to rate, or enter nothing to rate all songs in the cache. ")
 selected_song_ids = prompt_for_playlist(playlists_db).song_ids
 if selected_song_ids is None:
-    selected_song_ids = songs_db.keys()
+    selected_song_ids = songs_cache.keys()
 
 print("\nWhat output volume should song samples be played at?  0 disables playback.  ")
 desired_volume = None
@@ -97,7 +97,7 @@ for index, song_id in enumerate(selected_song_ids):
     skip_to_next_song = False
     song_rated = False
 
-    target_song = songs_db[song_id]
+    target_song = songs_cache[song_id]
 
     if not target_song.has_latest_ratings():
         print("\n\"" + target_song.name + "\" by \"" + target_song.artist + "\"")
@@ -199,6 +199,6 @@ for index, song_id in enumerate(selected_song_ids):
         elif skip_to_next_song:
             continue
 
-print("\nRated " + str(num_songs_rated) + " songs; saving song database and exiting. ")
-cleanup_songs_db(songs_db, playlists_db)
-write_song_db(songs_db)
+print("\nRated " + str(num_songs_rated) + " songs; saving song cache and exiting. ")
+cleanup_song_cache(songs_cache, playlists_db)
+write_song_cache(songs_cache)

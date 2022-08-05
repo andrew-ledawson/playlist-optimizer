@@ -32,7 +32,7 @@ MAX_SONG_TIME_DIFFERENCE = 2
 # File names and extensions
 PLAYLIST_FILE_PREFIX = 'playlist_'
 PLAYLIST_FILE_EXTENSION = '.ytp'
-SONG_DB_FILE = 'songs.yts'
+SONG_METADATA_CACHE_FILE = 'cached_song_metadata.yts'
 YTM_AUTH_FILE = 'headers_auth.json'
 SPOTIFY_AUTH_FILE = 'spotify.json'
 
@@ -609,19 +609,19 @@ def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
     """Loads local playlist files into a dict (keyed by YT id) and returns it.  
     Also returns dict of songs by YT id.  Takes optional path argument or just seaches current directory."""
 
-    print("Loading songs database and playlist files from folder \"" + path + "\". You may be prompted to correct errors. ")
+    print("Loading songs cache and playlist files from folder \"" + path + "\". You may be prompted to correct errors. ")
 
-    # Load songs db, checking for backup in case save was interrupted
-    songs_db = dict()
-    if os.path.exists(SONG_DB_FILE + '.bak'):
-        print("Songs database backup detected; last save may have failed.")
+    # Load songs cache, checking for backup in case save was interrupted
+    songs_cache = dict()
+    if os.path.exists(SONG_METADATA_CACHE_FILE + '.bak'):
+        print("Songs cache backup detected; last save may have failed.")
         if prompt_user_for_bool("Replace the primary copy with the backup? "):
-            os.rename(SONG_DB_FILE + '.bak', SONG_DB_FILE)
+            os.rename(SONG_METADATA_CACHE_FILE + '.bak', SONG_METADATA_CACHE_FILE)
         else:
-            os.remove(SONG_DB_FILE + '.bak')
-    if os.path.exists(SONG_DB_FILE):
-        songs_file = open(SONG_DB_FILE, "rb")
-        songs_db = pickle.load(songs_file)
+            os.remove(SONG_METADATA_CACHE_FILE + '.bak')
+    if os.path.exists(SONG_METADATA_CACHE_FILE):
+        songs_file = open(SONG_METADATA_CACHE_FILE, "rb")
+        songs_cache = pickle.load(songs_file)
         songs_file.close()
 
     # Load playlist files
@@ -634,37 +634,37 @@ def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
         playlist_file.close()
         playlists_db[playlist.yt_id] = playlist
 
-        # Check if any songs are not in database and download them
+        # Check if any songs are not in the cache and download them
         missing_metadata_count = 0
         if playlist.song_ids is None:
             print("Warning: playlist ID " + playlist.yt_id + " seems empty and should be redownloaded. ")
         for song_id in playlist.song_ids:
-            if song_id not in songs_db:
+            if song_id not in songs_cache:
                 # Print update every 10 retrievals since they take a while
                 if missing_metadata_count % 10 == 9:
                     print("Correcting metadata for " + str(missing_metadata_count + 1) + "th song. ")
-                songs_db[song_id] = process_song_metadata(song=download_metadata_from_YT_id(song_id), search_spotify=True, edit_metadata=True, get_features=True)
-                songs_db[song_id].yt_id = songs_db[song_id] # Don't use alternative ID
+                songs_cache[song_id] = process_song_metadata(song=download_metadata_from_YT_id(song_id), search_spotify=True, edit_metadata=True, get_features=True)
+                songs_cache[song_id].yt_id = songs_cache[song_id] # Don't use alternative ID
                 missing_metadata_count = missing_metadata_count + 1
         if missing_metadata_count > 0:
             print("Updated " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\". Note that album names cannot be loaded. ")
 
-    print("Loaded " + str(len(playlists_db.keys())) + " saved playlists and " + str(len(songs_db.keys())) + " songs. ")
-    return playlists_db, songs_db
+    print("Loaded " + str(len(playlists_db.keys())) + " saved playlists and " + str(len(songs_cache.keys())) + " songs. ")
+    return playlists_db, songs_cache
 
-def write_song_db(all_songs : dict[str, Song]):
-    """Save song database, moving old copy to backup location in case saving is interrupted."""
-    if os.path.exists(SONG_DB_FILE):
-        os.rename(SONG_DB_FILE, SONG_DB_FILE + '.bak')
-    songs_file = open(SONG_DB_FILE, "wb")
+def write_song_cache(all_songs : dict[str, Song]):
+    """Save song metadata cache, moving old copy to backup location in case saving is interrupted."""
+    if os.path.exists(SONG_METADATA_CACHE_FILE):
+        os.rename(SONG_METADATA_CACHE_FILE, SONG_METADATA_CACHE_FILE + '.bak')
+    songs_file = open(SONG_METADATA_CACHE_FILE, "wb")
     pickle.dump(all_songs, songs_file)
     songs_file.close()
-    if os.path.exists(SONG_DB_FILE + '.bak'):
-        os.remove(SONG_DB_FILE + '.bak')
+    if os.path.exists(SONG_METADATA_CACHE_FILE + '.bak'):
+        os.remove(SONG_METADATA_CACHE_FILE + '.bak')
 
-def cleanup_songs_db(songs_db : dict[str, Song], playlists_db : dict[str, Playlist]):
-    """Checks and offers to remove songs in database not used by any playlist."""
-    unseen_songs = [song_id for song_id in songs_db]
+def cleanup_song_cache(songs_cache : dict[str, Song], playlists_db : dict[str, Playlist]):
+    """Checks and offers to remove songs in cache not used by any playlist."""
+    unseen_songs = [song_id for song_id in songs_cache]
     for playlist in playlists_db.values():
         for song_id in playlist.song_ids:
             try:
@@ -672,11 +672,11 @@ def cleanup_songs_db(songs_db : dict[str, Song], playlists_db : dict[str, Playli
             except:
                 pass
     if len(unseen_songs) > 0:
-        print(str(len(unseen_songs)) + " songs in the database are not used by a playlist. ")
+        print(str(len(unseen_songs)) + " songs in the cache are not used by a playlist. ")
         if prompt_user_for_bool("Remove them? "):
             for song_id in unseen_songs:
-                songs_db.pop(song_id)
-    return songs_db
+                songs_cache.pop(song_id)
+    return songs_cache
 
 def prompt_for_playlist(playlists_db : dict[str, Playlist]) -> Playlist:
     """Prompts user to select playlists from the given dict. Allows user to select none to load all songs."""

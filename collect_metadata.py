@@ -3,7 +3,7 @@ import os
 from foundation import *
 
 # Check which playlists are already saved
-playlists_db, songs_db = load_data_files()
+playlists_db, songs_cache = load_data_files()
 
 # Go through each user playlist on YouTube Music
 playlist_limit = 0
@@ -55,7 +55,7 @@ for candidate_playlist in ytm_playlists:
             # Create Song object from YTM's response for the playlist contents
             local_song = Song()
             local_song.yt_id = playlist_song['videoId']
-            if local_song.yt_id not in songs_db:
+            if local_song.yt_id not in songs_cache:
                 if playlist_song['album'] is not None:
                     local_song.album = playlist_song['album']['name']
                 local_song.artist = playlist_song['artists'][0]['name']
@@ -71,7 +71,7 @@ for candidate_playlist in ytm_playlists:
                     local_song.duration_s = alt_lookup_song.duration_s
 
                 process_song_metadata(song=local_song, search_spotify=True, edit_metadata=False, get_features=True)
-                songs_db[local_song.yt_id] = local_song
+                songs_cache[local_song.yt_id] = local_song
 
             local_playlist.song_ids.append(local_song.yt_id)
 
@@ -82,6 +82,6 @@ for candidate_playlist in ytm_playlists:
         playlists_db[local_playlist.yt_id] = local_playlist
         print("Done processing playlist \"" + local_playlist.name + "\"; saved to folder. ")
         num_playlists_processed = num_playlists_processed + 1
-        write_song_db(songs_db)
+        write_song_cache(songs_cache)
 
 print("Processed " + str(num_playlists_processed) + " playlists; exiting. ")

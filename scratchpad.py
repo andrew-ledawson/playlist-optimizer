@@ -2,13 +2,13 @@ from foundation import *
 
 import requests, subprocess
 
-playlists_db, songs_db = load_data_files()
+playlists_db, songs_cache = load_data_files()
 
 # Prompt user to select playlist
-print("\nEnter a playlist number to download, or enter nothing to download all songs in database. ")
+print("\nEnter a playlist number to download, or enter nothing to download all songs in cache. ")
 selected_song_ids = prompt_for_playlist(playlists_db).song_ids
 if selected_song_ids is None:
-    selected_song_ids = songs_db.keys()
+    selected_song_ids = songs_cache.keys()
 
 num_songs_rated = 0
 
@@ -43,7 +43,7 @@ def extract_playback_url_from_json(json):
 for index, song_id in enumerate(selected_song_ids):
     play_url = None
     play_format = None
-    target_song = songs_db[song_id]
+    target_song = songs_cache[song_id]
     ytdlp_path_candidates = ["yt-dlp.exe", "./yt-dlp.exe", "yt-dlp", "./yt-dlp"]
     for ytdlp_path_index, ytdlp_path in enumerate(ytdlp_path_candidates):
         try:
@@ -63,18 +63,18 @@ for index, song_id in enumerate(selected_song_ids):
         print("Could not get url to download")
 
 """
-saved_playlists, songs_db = load_data_files('.')
+saved_playlists, songs_cache = load_data_files('.')
 
 selected_playlist = prompt_for_playlist(saved_playlists)
 all_songs_ratings = []
 for song_id in selected_playlist.song_ids:
-    song = songs_db[song_id]
+    song = songs_cache[song_id]
     if song.user_ratings not in all_songs_ratings:
         all_songs_ratings.append(song.user_ratings)
     else:
         song.user_ratings = dict()
 
-write_song_db(songs_db)
+write_song_db(songs_cache)
 """
 
 """

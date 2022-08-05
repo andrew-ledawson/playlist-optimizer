@@ -6,7 +6,7 @@ from ortools.init import pywrapinit
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 random.seed()
-playlists_db, songs_db = load_data_files()
+playlists_db, songs_cache = load_data_files()
 
 selected_playlist = None
 while selected_playlist is None:
@@ -77,8 +77,8 @@ def get_current_similarity_score(song_ids:list) -> float:
     num_songs = len(song_ids)
     total_score = 0.0
     for current_song_index in range(-1, len(song_ids) - 1):
-        song_0 = songs_db[song_ids[current_song_index]]
-        song_1 = songs_db[song_ids[current_song_index + 1]]
+        song_0 = songs_cache[song_ids[current_song_index]]
+        song_1 = songs_cache[song_ids[current_song_index + 1]]
         score = score + get_similarity_score_v1(song_0, song_1)
     # Normalize score so it ranges between 0.0 and 1.0
     return score / num_songs
@@ -112,7 +112,7 @@ def generate_distance_matrix(song_ids:list) -> list:
                 first_song_id = song_ids[first_node_index]
                 second_song_id = song_ids[second_node_index]
                 # Similarity score needs to be inverted to become distance (since a distance of 0 is the most similar)
-                distance_sublist.append(1.0 - get_similarity_score_v1(songs_db[first_song_id], songs_db[second_song_id]))
+                distance_sublist.append(1.0 - get_similarity_score_v1(songs_cache[first_song_id], songs_cache[second_song_id]))
         distance_list.append(distance_sublist)
     # Solver needs a starting location, so add a dummy node before returning
     return [[0] * song_list_length] + distance_list
