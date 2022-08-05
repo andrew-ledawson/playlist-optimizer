@@ -2,6 +2,9 @@ from foundation import *
 
 import numpy, random, scipy.special
 
+from ortools.init import pywrapinit
+from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+
 random.seed()
 playlists_db, songs_db = load_data_files()
 
@@ -10,6 +13,10 @@ while selected_playlist is None:
     print("\nSelect a playlist to sort: ")
     selected_playlist = prompt_for_playlist(playlists_db)
 original_songs = selected_playlist.song_ids.copy()
+dedupliated_songs = [*set(original_songs)]
+if dedupliated_songs != original_songs:
+    removed_song_count = len(original_songs) - len(dedupliated_songs)
+    print(str(removed_song_count) + " songs will be removed from the sorted playlist for being duplicates")
 
 def smoothstep(x, x_min=0, x_max=1, N=1):
     """A sigmoid/s-curve/clamping function that modifies some score.  As the score drops from 1.0, 
@@ -66,6 +73,10 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     
     return (key_subscore * 0.35) + (bpm_subscore * 0.3) + (user_rating_subscore * 0.35)
 
+def get_similarity_score_v1(index1 : int, index2 : int) -> float:
+    # TODO: make index 0 a perfectly connected (zero cost) dummy
+    return get_similarity_score_v1()
+
 def get_current_similarity_score(song_ids:list) -> float:
     num_songs = len(song_ids)
     total_score = 0.0
@@ -77,9 +88,9 @@ def get_current_similarity_score(song_ids:list) -> float:
     return score / num_songs
 
 def generate_distance_matrix(song_ids:list) -> list:
-    # TODO: make initial "None" node with 0 distance
     """
     Generates an n*n matrix of "distances" between songs in the playlist
+    Invert of similarity score because farther is worse
     """
     song_list_length = len(song_ids)
 
@@ -87,9 +98,10 @@ def generate_distance_matrix(song_ids:list) -> list:
     ONE_GIBIBYTE = 1024 * 1024 * 1024
     FLOAT_SIZE_BYTES = 64 / 8
     if song_list_length * song_list_length > ONE_GIBIBYTE / FLOAT_SIZE_BYTES:
+        # TODO later: instead of erroring, don't generate matrix and give similarity score callback to solver
         raise Exception("Playlist is too large to easily sort, aborting. ")
 
-    distance_list = []
+    distance_list = [0] * song_list_length # Solver needs a starting location, so make a dummy node
     for first_node_index in range(song_list_length):
         distance_sublist = []
         for second_node_index in range(song_list_length):
@@ -108,17 +120,55 @@ def generate_distance_matrix(song_ids:list) -> list:
         distance_list.append(distance_sublist)
     return distance_list
 
-# TODO: Remove duplicate songs (and warn user)
-def solve_for_playlist_order():
+def solve_for_playlist_order(original_songs):
+    """
+    Do a traveling salesperson solve
+    """
     problem = {}
-    problem['distance_matrix'] = generate_distance_matrix()
-    pass
+    problem['distance_matrix'] = generate_distance_matrix(dedupliated_songs)
+    problem['num_vehicles'] = 1 # Only one playlist is being generated
+    problem['depot'] = 0 # Start at dummy node
 
-sort_result = solve_for_playlist_order()
-sorted_songs = sort_result.x
+    manager = pywrapcp.RoutingIndexManager(len(problem['distance_matrix']), problem['num_vehicles'], problem['depot'])
+    #manager = pywrapcp.RoutingIndexManager(len(problem['distance_matrix']), 1, 0)
+
+    def distance_callback(from_index, to_index):
+        # Convert from routing variable Index to distance matrix NodeIndex.
+        from_node = manager.IndexToNode(from_index)
+        to_node = manager.IndexToNode(to_index)
+        return problem['distance_matrix'][from_node][to_node]
+
+    routing = pywrapcp.RoutingModel(manager)
+    #vertex_traversal_cost = routing.RegisterTransitCallback(get_similarity_score_v1)
+    vertex_traversal_cost = routing.RegisterTransitCallback(distance_callback)
+    routing.SetArcCostEvaluatorOfAllVehicles(vertex_traversal_cost)
+    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+    search_parameters.first_solution_strategy = (routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
+
+    print("Solving playlist...")
+    solution = routing.SolveWithParameters(search_parameters)
+    if not solution:
+        raise Exception("Could not sort playlist, aborting. ")
+
+
+    routes = [] # 2d array of (output playlist, index number)
+    for route_nbr in range(routing.vehicles()):
+        index = routing.Start(route_nbr)
+        route = [manager.IndexToNode(index)]
+        while not routing.IsEnd(index):
+            index = solution.Value(routing.NextVar(index))
+            route.append(manager.IndexToNode(index))
+        routes.append(route)
+
+    return routes[0] # Only one playlist is being generated
+
+sorted_indices = solve_for_playlist_order(dedupliated_songs)
+sorted_song_ids = []
+for song_number in sorted_indices:
+    sorted_song_ids.append(dedupliated_songs[song_number])
 
 sorted_playlist_name = selected_playlist.name + " (sorted on " + time.ctime*() + ")"
-playlist_id = run_API_request(lambda : YTM.create_playlist(title=sorted_playlist_name, video_ids=sorted_songs), "to create a YouTube Music playlist with the sorted songs")
+playlist_id = run_API_request(lambda : YTM.create_playlist(title=sorted_playlist_name, video_ids=sorted_song_ids), "to create a YouTube Music playlist with the sorted songs")
 print("Sorted playlist created at https://music.youtube.com/playlist?list=" + playlist_id)
 
 # TODO later: support modifying existing playlist
