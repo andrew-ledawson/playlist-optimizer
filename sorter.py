@@ -14,8 +14,8 @@ while selected_playlist is None:
     selected_playlist = prompt_for_playlist(playlists_db)
 original_songs = selected_playlist.song_ids.copy()
 dedupliated_songs = [*set(original_songs)]
-if dedupliated_songs != original_songs:
-    removed_song_count = len(original_songs) - len(dedupliated_songs)
+removed_song_count = len(original_songs) - len(dedupliated_songs)
+if removed_song_count > 0:
     print(str(removed_song_count) + " songs will be removed from the sorted playlist for being duplicates")
 
 def smoothstep(x, x_min=0, x_max=1, N=1):
@@ -73,10 +73,6 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
     
     return (key_subscore * 0.35) + (bpm_subscore * 0.3) + (user_rating_subscore * 0.35)
 
-def get_similarity_score_v1(index1 : int, index2 : int) -> float:
-    # TODO: make index 0 a perfectly connected (zero cost) dummy
-    return get_similarity_score_v1()
-
 def get_current_similarity_score(song_ids:list) -> float:
     num_songs = len(song_ids)
     total_score = 0.0
@@ -101,7 +97,7 @@ def generate_distance_matrix(song_ids:list) -> list:
         # TODO later: instead of erroring, don't generate matrix and give similarity score callback to solver
         raise Exception("Playlist is too large to easily sort, aborting. ")
 
-    distance_list = [0] * song_list_length # Solver needs a starting location, so make a dummy node
+    distance_list = []
     for first_node_index in range(song_list_length):
         distance_sublist = []
         for second_node_index in range(song_list_length):
@@ -118,7 +114,8 @@ def generate_distance_matrix(song_ids:list) -> list:
                 # Similarity score needs to be inverted to become distance (since a distance of 0 is the most similar)
                 distance_sublist.append(1.0 - get_similarity_score_v1(songs_db[first_song_id], songs_db[second_song_id]))
         distance_list.append(distance_sublist)
-    return distance_list
+    # Solver needs a starting location, so add a dummy node before returning
+    return [[0] * song_list_length] + distance_list
 
 def solve_for_playlist_order(original_songs):
     """
@@ -139,7 +136,7 @@ def solve_for_playlist_order(original_songs):
         return problem['distance_matrix'][from_node][to_node]
 
     routing = pywrapcp.RoutingModel(manager)
-    #vertex_traversal_cost = routing.RegisterTransitCallback(get_similarity_score_v1)
+    #vertex_traversal_cost = routing.RegisterTransitCallback(song1, song2) # TODO: make passthrough func to catch index 0 and make that 0-weight
     vertex_traversal_cost = routing.RegisterTransitCallback(distance_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(vertex_traversal_cost)
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
@@ -165,12 +162,14 @@ def solve_for_playlist_order(original_songs):
 sorted_indices = solve_for_playlist_order(dedupliated_songs)
 sorted_song_ids = []
 for song_number in sorted_indices:
-    sorted_song_ids.append(dedupliated_songs[song_number])
+    sorted_song_ids.append(dedupliated_songs[song_number - 1])
 
-sorted_playlist_name = selected_playlist.name + " (sorted on " + time.ctime*() + ")"
-playlist_id = run_API_request(lambda : YTM.create_playlist(title=sorted_playlist_name, video_ids=sorted_song_ids), "to create a YouTube Music playlist with the sorted songs")
+sorted_playlist_name = selected_playlist.name + " (sorted on " + time.ctime() + ")"
+playlist_id = run_API_request(lambda : YTM.create_playlist(title=sorted_playlist_name, video_ids=sorted_song_ids, description="Automatically created by sorter"), "to create a YouTube Music playlist with the sorted songs")
 print("Sorted playlist created at https://music.youtube.com/playlist?list=" + playlist_id)
 
 # TODO later: support modifying existing playlist
 # need to do minimum number of moves to transform existing playlist into new order
 # need to get setVideoId of every song to enable sorting (it's next to the song metadata in the YTM response)
+
+# TODO: print results with song, key, and bpm.  print old and new lists with scores between each song

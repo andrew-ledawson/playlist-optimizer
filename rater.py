@@ -78,10 +78,11 @@ def extract_playback_url_from_json(json):
 def download_ytm_song(play_url, play_format, song_name):
     try:
         playback_data_response = requests.get(play_url)
-        extension = "webm"
+        extension = "ogg"
         if play_format == 140 or play_format == 141:
             extension = "m4a"
         illegal_filename = str(num_songs_rated) + " " +  song_name
+        # TODO: Zero pad
         legal_filename = "".join(x for x in illegal_filename if (x.isalnum() or x == ' ')) + "." + extension
         while "  " in legal_filename: # Remove duplicate spaces
             legal_filename = legal_filename.replace("  ", " ")
