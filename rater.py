@@ -1,7 +1,6 @@
-from asyncio.windows_utils import Popen
-import json, requests, subprocess, time
-import signal
 from foundation import *
+
+import requests, signal, subprocess
 
 print("Song rater")
 print("Allows rating songs by certain traits (+2 to -2) while playing a sample of the song. ")
@@ -76,6 +75,21 @@ def extract_playback_url_from_json(json):
                 return format_json['url'], perferred_format
     return None, None
 
+def download_ytm_song(play_url, play_format, song_name):
+    try:
+        playback_data_response = requests.get(play_url)
+        extension = "webm"
+        if play_format == 140 or play_format == 141:
+            extension = "m4a"
+        illegal_filename = str(num_songs_rated) + " " +  song_name
+        legal_filename = "".join(x for x in illegal_filename if (x.isalnum() or x == ' ')) + "." + extension
+        while "  " in legal_filename: # Remove duplicate spaces
+            legal_filename = legal_filename.replace("  ", " ")
+        with open(legal_filename, "xb") as playback_file:
+            playback_file.write(playback_data_response.content)
+    except Exception as error:
+        print("Failed to download song: " + str(error))
+
 # For each song, prompt user to rate on each trait
 for index, song_id in enumerate(selected_song_ids):
     should_exit_rating_loop = False
@@ -109,27 +123,19 @@ for index, song_id in enumerate(selected_song_ids):
                         print("Helper program not found, please install yt-dlp, or be sure you placed yt-dlp.exe in this program folder. ")
                     elif target_song.is_private:
                         print("This is a private song uploaded directly to your account. It cannot be played by this program. ")
+            song_time_offset = sample_time_offset
             if play_url is None:
                 # If youtube playback isn't available, try Spotify's MP3 preview
+                print("Falling back to Spotify song preview, ignoring offset")
                 play_url = target_song.spotify_preview_url
+                song_time_offset = 0
             if play_url is not None:
-                try:
-                    # TODO: Comment out downloader
-                    playback_data_response = requests.get(play_url)
-                    extension = "webm"
-                    if play_format == 140 or play_format == 141:
-                        extension = "m4a"
-                    illegal_filename = str(num_songs_rated) + " " +  target_song.name
-                    legal_filename = "".join(x for x in illegal_filename if (x.isalnum() or x == ' ')) + "." + extension
-                    with open(legal_filename, "xb") as playback_file:
-                        playback_file.write(playback_data_response.content)
-                except Exception as error:
-                    print("Failed to download song: " + str(error))
+                #download_ytm_song(play_url, play_format, target_song.name)
                 # Try different ffplay paths
                 ffplay_path_candidates = ["ffplay.exe", "ffmpeg/bin/ffplay.exe", "ffplay", "ffmpeg/bin/ffplay"]
                 for ffplay_path_index, ffplay_path in enumerate(ffplay_path_candidates):
                     try:
-                        player = subprocess.Popen(ffplay_path + " " + play_url + " -volume " + str(desired_volume) + " -ss " + str(sample_time_offset) + " -nodisp -loglevel error", stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+                        player = subprocess.Popen(ffplay_path + " " + play_url + " -volume " + str(desired_volume) + " -ss " + str(song_time_offset) + " -nodisp -loglevel error", stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
                         # stdout=subprocess.DEVNULL,
                         break # Player launched successfully, stop trying ffplay paths
                     except Exception as error:
@@ -167,16 +173,26 @@ for index, song_id in enumerate(selected_song_ids):
                 print_traits_info()
             num_songs_rated = num_songs_rated + 1
         if player is not None:
+            # TODO: if windows, else...
+            subprocess.call(['taskkill', '/F', '/T', '/PID',  str(player.pid)], stdout=subprocess.DEVNULL) #, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            #os.kill(player.pid, signal.SIGTERM)
             # TODO: Sometimes termianting the player leaves its child running, try switching from Popen() to run(), and also maybe running process with shell flag enabled
             # Can't use signal 1, it kills python process
-            for index, signal in enumerate([signal.SIGBREAK, signal.SIGINT, signal.SIGTERM, signal.SIG_DFL]):
+            # signal.SIGBREAK and signal.SIG_DFL not found (at least on Windows)
+            """
+            for index, signal in enumerate([signal.SIGINT, signal.SIGTERM]):
                 try:
                     print("Trying to kill player with signal " + str(index))
                     player.send_signal(signal)
-                    if player.poll() != None:
-                        break
+                    if player.poll() == None: # Player alive after signal sent
+                        time.sleep(1.5) # Wait a moment for player to die
+                        if player.poll() != None: # Player killed after waiting
+                            break # Stop trying kill signals
+                    else: # Player was instantly killed
+                        break # Stop trying kill signals
                 except:
                     pass
+            """
         if should_exit_rating_loop:
             break
         elif skip_to_next_song:

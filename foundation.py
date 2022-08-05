@@ -1,6 +1,6 @@
 # Basic Python imports
-import glob, pickle, os, re, sys, time
-import json
+import glob, json, pickle, os, re, sys, time
+
 from functools import total_ordering
 from typing import Callable
 
@@ -47,6 +47,7 @@ MIN_PYTHON = (3, 6)
 if sys.version_info < MIN_PYTHON:
     sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
 
+# TODO: Allow user to specify [a]bort
 def prompt_user_for_bool(message:str, allow_no_response = False) -> bool:
     """Prompts the user to respond to a message with 'y' or 'n', or optionally no response"""
     user_input = None
@@ -183,7 +184,7 @@ class Song:
     camelot_is_minor = None
     bpm = None
 
-    user_ratings = None # Can't be empty dict() or pickling turns all empty rating dicts into same instance
+    user_ratings = None # Can't be empty dict() or pickling will consolidate all songs' ratings into one instance
 
     def has_latest_ratings(self):
         global USER_RATINGS
