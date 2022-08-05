@@ -32,6 +32,11 @@ MAX_SONG_TIME_DIFFERENCE = 2
 # File names and extensions
 PLAYLIST_FILE_PREFIX = 'playlist_'
 PLAYLIST_FILE_EXTENSION = '.ytp'
+"""
+Song metadata, including user-generated ratings and basic metadata from music services.
+This cache has no expiration because at any time, a user may wish to sort different playlists 
+with overlapping sets of songs.  I want to avoid spamming 1000+ requests unless necessary.  
+"""
 SONG_METADATA_CACHE_FILE = 'cached_song_metadata.yts'
 YTM_AUTH_FILE = 'headers_auth.json'
 SPOTIFY_AUTH_FILE = 'spotify.json'
