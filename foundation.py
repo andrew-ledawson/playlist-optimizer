@@ -143,6 +143,8 @@ def run_API_request(operation : Callable, description="an unknown web request"):
 
             result = operation()
             OPS_SINCE_BACKOFF = OPS_SINCE_BACKOFF + 1
+            if result is None:
+                raise Exception("Invalid response received")
         except Exception as error:
             print("Error encountered while attempting " + description + ". ")
             if TIME_BETWEEN_OPS == DEFAULT_TIME_BETWEEN_OPS * MAX_TIME_MULTIPLIER:
@@ -150,7 +152,6 @@ def run_API_request(operation : Callable, description="an unknown web request"):
             if attempt_count > OPS_TO_INCREASE_BACKOFF:
                 attempt_count = 0
                 TIME_BETWEEN_OPS = TIME_BETWEEN_OPS * TIME_MULTIPLICATION_FACTOR
-                OPS_SINCE_BACKOFF = 0
                 print("Temporarily spacing out requests by " + str(TIME_BETWEEN_OPS) + " seconds... ")
             OPS_SINCE_BACKOFF = 0
             if "Unauthorized" in str(error) or type(error) in [spotipy.oauth2.SpotifyOauthError, spotipy.oauth2.SpotifyStateError]:
