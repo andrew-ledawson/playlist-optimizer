@@ -1,10 +1,9 @@
 .cache
 __pycache__
+scratchpad.py
 playlist_*.ytp
 cached_song_metadata.yts
 cached_song_metadata.yts.bak
-ffmpeg/
-yt-dlp.exe
 cookies.txt
 headers_auth.json
 spotify.json
