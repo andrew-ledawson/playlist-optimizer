@@ -116,8 +116,8 @@ SP = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=spotify_creds["client_i
 LAST_OP_TIME = time.time()
 TIME_BETWEEN_OPS = DEFAULT_TIME_BETWEEN_OPS = 1
 OPS_SINCE_BACKOFF = 0
-OPS_TO_RESTORE_BACKOFF = 5
-OPS_TO_INCREASE_BACKOFF = 3
+OPS_TO_RESTORE_BACKOFF = 2
+OPS_TO_INCREASE_BACKOFF = 2
 MAX_TIME_MULTIPLIER = 16
 TIME_MULTIPLICATION_FACTOR = 4
 def run_API_request(operation : Callable, description="an unknown web request"):
@@ -127,7 +127,7 @@ def run_API_request(operation : Callable, description="an unknown web request"):
     attempt_count = 0
 
     # Check if it's safe to try faster requests
-    if TIME_BETWEEN_OPS != DEFAULT_TIME_BETWEEN_OPS and OPS_SINCE_BACKOFF > OPS_TO_RESTORE_BACKOFF:
+    if TIME_BETWEEN_OPS != DEFAULT_TIME_BETWEEN_OPS and OPS_SINCE_BACKOFF >= OPS_TO_RESTORE_BACKOFF:
         TIME_BETWEEN_OPS = TIME_BETWEEN_OPS / TIME_MULTIPLICATION_FACTOR
         OPS_SINCE_BACKOFF = 0
 
@@ -149,7 +149,7 @@ def run_API_request(operation : Callable, description="an unknown web request"):
             print("Error encountered while attempting " + description + ". ")
             if TIME_BETWEEN_OPS == DEFAULT_TIME_BETWEEN_OPS * MAX_TIME_MULTIPLIER:
                 break
-            if attempt_count > OPS_TO_INCREASE_BACKOFF:
+            if attempt_count >= OPS_TO_INCREASE_BACKOFF:
                 attempt_count = 0
                 TIME_BETWEEN_OPS = TIME_BETWEEN_OPS * TIME_MULTIPLICATION_FACTOR
                 print("Temporarily spacing out requests by " + str(TIME_BETWEEN_OPS) + " seconds... ")
@@ -383,39 +383,41 @@ def process_song_metadata(song:Song, search_spotify:bool, edit_metadata:bool, ge
 
             if get_features:
                 features = run_API_request(lambda : SP.audio_features(tracks=[song.spotify_id])[0], "to look up Spotify musical features for track ID " + song.spotify_id)
-
-                song.set_bpm(float(features['tempo']))
-
-                # Validate Spotify pitch class then convert to camelot wheel position number 
-                # Camelot position numbers are in tuples (position for major key, position for minor key)
-                camelot_lookup = {
-                    0: (8, 5),
-                    1: (3, 12),
-                    2: (10, 7),
-                    3: (5, 2),
-                    4: (12, 9),
-                    5: (7, 4), 
-                5: (7, 4), 
-                    5: (7, 4), 
-                    6: (2, 11),
-                    7: (9, 6),
-                    8: (4, 1),
-                    9: (11, 8),
-                    10: (6, 3),
-                    11: (1, 10)
-                }
-                if features['key'] == -1:
-                    print("Spotify omitted the musical key for " + initial_spotify_search_str)
+                if features is None:
                     song.metadata_needs_review = True
                 else:
-                    if features['mode'] == 1:
-                        song.camelot_position, _ = camelot_lookup[features['key']]
-                        song.camelot_is_minor = False
+                    song.set_bpm(float(features['tempo']))
+
+                    # Validate Spotify pitch class then convert to camelot wheel position number 
+                    # Camelot position numbers are in tuples (position for major key, position for minor key)
+                    camelot_lookup = {
+                        0: (8, 5),
+                        1: (3, 12),
+                        2: (10, 7),
+                        3: (5, 2),
+                        4: (12, 9),
+                        5: (7, 4), 
+                    5: (7, 4), 
+                        5: (7, 4), 
+                        6: (2, 11),
+                        7: (9, 6),
+                        8: (4, 1),
+                        9: (11, 8),
+                        10: (6, 3),
+                        11: (1, 10)
+                    }
+                    if features['key'] == -1:
+                        print("Spotify omitted the musical key for " + initial_spotify_search_str)
+                        song.metadata_needs_review = True
                     else:
-                        _, song.camelot_position = camelot_lookup[features['key']]
-                        song.camelot_is_minor = True
-                    if song.metadata_needs_review is None:
-                        song.metadata_needs_review = False
+                        if features['mode'] == 1:
+                            song.camelot_position, _ = camelot_lookup[features['key']]
+                            song.camelot_is_minor = False
+                        else:
+                            _, song.camelot_position = camelot_lookup[features['key']]
+                            song.camelot_is_minor = True
+                        if song.metadata_needs_review is None:
+                            song.metadata_needs_review = False
 
     # Metadata editor that can compare to metadata retrieved from Spotify
     if edit_metadata:
