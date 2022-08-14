@@ -1,4 +1,4 @@
-This tool, its integrated ytmusicapi library, and its integrated spotipy library are licensed under the MIT license. To unofficially summarize: you can do almost anything you want with this tool, but if bad things happen, it's your own fault for trusting random pieces of code from the internet. The specific, legally binding text of the MIT license is the following block of text:
+This tool, its integrated ytmusicapi library, and its integrated spotipy library are licensed under the MIT license.  It follows: 
 
 "Playlist Optimizer" Copyright (c) 2022 Andrew LeDawson
 "ytmusicapi" Copyright (c) 2020 sigma67

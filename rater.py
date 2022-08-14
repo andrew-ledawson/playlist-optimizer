@@ -14,7 +14,7 @@ selected_song_ids = prompt_for_playlist(playlists_db).song_ids
 if selected_song_ids is None:
     selected_song_ids = songs_cache.keys()
 
-print("\nWhat output volume should song samples be played at?  0 disables playback.  ")
+print("\nWhat output volume should song samples be played at?  0 disables playback. ")
 desired_volume = None
 while desired_volume is None:
     try:
@@ -75,22 +75,6 @@ def extract_playback_url_from_json(json):
                 return format_json['url'], perferred_format
     return None, None
 
-def download_ytm_song(play_url, play_format, song_name):
-    try:
-        playback_data_response = requests.get(play_url)
-        extension = "ogg"
-        if play_format == 140 or play_format == 141:
-            extension = "m4a"
-        illegal_filename = str(num_songs_rated) + " " +  song_name
-        # TODO: Zero pad
-        legal_filename = "".join(x for x in illegal_filename if (x.isalnum() or x == ' ')) + "." + extension
-        while "  " in legal_filename: # Remove duplicate spaces
-            legal_filename = legal_filename.replace("  ", " ")
-        with open(legal_filename, "xb") as playback_file:
-            playback_file.write(playback_data_response.content)
-    except Exception as error:
-        print("Failed to download song: " + str(error))
-
 # For each song, prompt user to rate on each trait
 for index, song_id in enumerate(selected_song_ids):
     should_exit_rating_loop = False
@@ -131,7 +115,6 @@ for index, song_id in enumerate(selected_song_ids):
                 play_url = target_song.spotify_preview_url
                 song_time_offset = 0
             if play_url is not None:
-                #download_ytm_song(play_url, play_format, target_song.name)
                 # Try different ffplay paths
                 ffplay_path_candidates = ["ffplay.exe", "ffmpeg/bin/ffplay.exe", "ffplay", "ffmpeg/bin/ffplay"]
                 for ffplay_path_index, ffplay_path in enumerate(ffplay_path_candidates):

@@ -5,9 +5,12 @@ print("Metadata fixer")
 playlists_db, songs_cache = load_data_files()
 
 print("\nEnter a playlist number to rate, or enter nothing to rate all songs in the cache. ")
-song_ids_to_check = prompt_for_playlist(playlists_db).song_ids
-if song_ids_to_check is None:
+playlist = prompt_for_playlist(playlists_db)
+song_ids_to_check = []
+if playlist is None:
     song_ids_to_check = songs_cache.keys()
+else:
+    song_ids_to_check = playlist.song_ids
 
 should_check_flagged_songs = prompt_user_for_bool("Check only songs that were flagged for review? ")
 
