@@ -169,6 +169,7 @@ class Playlist:
     name = None
     song_ids = None # list of strs
     yt_id = None
+    order_ids = None # list of strs
 
 @total_ordering
 class Song:
@@ -657,7 +658,7 @@ def load_data_files(path = '.') -> tuple[dict[str, Playlist], dict[str, Song]]:
         if missing_metadata_count > 0:
             print("Updated " + str(missing_metadata_count) + " songs that had no data while loading playlist \"" + playlist.name + "\". Note that album names cannot be loaded. ")
 
-    print("Loaded " + str(len(playlists_db.keys())) + " saved playlists and " + str(len(songs_cache.keys())) + " songs. ")
+    print("Loaded " + str(len(playlists_db.keys())) + " saved playlists and " + str(len(songs_cache.keys())) + " cached songs. ")
     return playlists_db, songs_cache
 
 def write_song_cache(all_songs : dict[str, Song]):

@@ -17,7 +17,7 @@ print("Got " + str(len(ytm_playlists)) + " playlists from YouTube Music. ")
 print("What author's playlists should be downloaded from your YouTube Music Library? Check by opening one of the playlists on music.youtube.com and looking at the author name (directly below the playlist name). ")
 user_name = input("Account name or channel ID: ")
 
-overwrite_all_playlists = prompt_user_for_bool(message="Redownload and overwrite playlists that are already saved? Leave answer empty to prompt for every playlist. ", allow_no_response=True)
+overwrite_all_playlists = prompt_user_for_bool(message="Redownload and overwrite playlists that are already saved? Leave answer empty to prompt for every playlist. This will preserve song metadata and ratings. ", allow_no_response=True)
 
 num_playlists_processed = 0
 
@@ -28,6 +28,7 @@ for candidate_playlist in ytm_playlists:
     local_playlist_author_name = candidate_playlist.get('author', [{}])[0].get('name', '')
     local_playlist_author_id =  candidate_playlist.get('author', [{}])[0].get('id', '')
     local_playlist.song_ids = list()
+    local_playlist.order_ids = list()
 
     # Omit playlists by other users or YTM themselves
     if local_playlist_author_name == user_name or local_playlist_author_id == user_name:
@@ -74,6 +75,7 @@ for candidate_playlist in ytm_playlists:
                 songs_cache[local_song.yt_id] = local_song
 
             local_playlist.song_ids.append(local_song.yt_id)
+            local_playlist.order_ids.append(playlist_song['setVideoId'])
 
         # Store complete playlist
         playlist_file = open('./' + PLAYLIST_FILE_PREFIX + local_playlist.yt_id + PLAYLIST_FILE_EXTENSION, "wb")

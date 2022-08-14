@@ -164,12 +164,18 @@ sorted_song_ids = []
 for song_number in sorted_indices:
     sorted_song_ids.append(dedupliated_songs[song_number - 1])
 
-sorted_playlist_name = selected_playlist.name + " (sorted on " + time.ctime() + ")"
-playlist_id = run_API_request(lambda : YTM.create_playlist(title=sorted_playlist_name, video_ids=sorted_song_ids, description="Automatically created by sorter"), "to create a YouTube Music playlist with the sorted songs")
-print("Sorted playlist created at https://music.youtube.com/playlist?list=" + playlist_id)
+if prompt_user_for_bool("Reorder existing playlist on YTM? "):
+    if removed_song_count > 0:
+        print("Duplicate songs will be at top of playlist. ")
+    # Moves each song to bottom of playlist, putting them all in order with duplicates at the top
+    for current_song_id in sorted_song_ids:
+        original_index = original_songs.index(current_song_id)
+        current_order_id = selected_playlist.order_ids[original_index]
+        run_API_request(lambda: YTM.edit_playlist(selected_playlist.yt_id, moveItem=(current_order_id, None)))
 
-# TODO later: support modifying existing playlist
-# need to do minimum number of moves to transform existing playlist into new order
-# need to get setVideoId of every song to enable sorting (it's next to the song metadata in the YTM response)
+elif prompt_user_for_bool("Create new, sorted playlist on YTM? "):
+    sorted_playlist_name = selected_playlist.name + " (sorted on " + time.ctime() + ")"
+    playlist_id = run_API_request(lambda : YTM.create_playlist(title=sorted_playlist_name, video_ids=sorted_song_ids, description="Automatically created by sorter"), "to create a YouTube Music playlist with the sorted songs")
+    print("Sorted playlist created at https://music.youtube.com/playlist?list=" + playlist_id)
 
 # TODO: print results with song, key, and bpm.  print old and new lists with scores between each song
