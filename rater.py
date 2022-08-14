@@ -26,7 +26,7 @@ while desired_volume is None:
 
 sample_time_offset = None
 if desired_volume > 0:
-    print("\nHow many seconds into the song should playback start? ")
+    print("\nHow many seconds into the song should playback start? 50 is good for many pop songs. ")
     while sample_time_offset is None:
         try:
             time_offset_input = int(input("Seconds: "))
@@ -76,6 +76,8 @@ def extract_playback_url_from_json(json):
                 return format_json['url'], perferred_format
     return None, None
 
+# TODO: Notify user of how many songs to rate (have to iterate over every song, check if rated, and tally)
+
 # For each song, prompt user to rate on each trait
 for index, song_id in enumerate(selected_song_ids):
     should_exit_rating_loop = False
@@ -92,8 +94,9 @@ for index, song_id in enumerate(selected_song_ids):
         if desired_volume > 0:
             play_url = None
             play_format = None
-            ytdlp_path_candidates = ["yt-dlp.exe", "./yt-dlp.exe", "yt-dlp", "./yt-dlp"]
+            ytdlp_path_candidates = ["yt-dlp", "./yt-dlp", "yt-dlp.exe", "./yt-dlp.exe"] # TODO: Are last 2 not necessary?
             for ytdlp_path_index, ytdlp_path in enumerate(ytdlp_path_candidates):
+                ytdlp_found = False
                 try:
                     yt_manifest_text = subprocess.check_output(ytdlp_path + " -j " + \
                                                                ("--cookies " + cookies_file_path + " " if cookies_file_path is not None else " ") + \
@@ -105,10 +108,10 @@ for index, song_id in enumerate(selected_song_ids):
                         break
                 except Exception as error:
                     print("Failed to acquire stream for song sample (ID " + song_id + "). ")
-                    if type(error) is FileNotFoundError:
+                    if type(error) is FileNotFoundError and not ytdlp_found:
                         print("Helper program not found, please install yt-dlp, or be sure you placed yt-dlp.exe in this program folder. ")
-                    elif target_song.is_private:
-                        print("This is a private song uploaded directly to your account. It cannot be played by this program. ")
+                    else:
+                        ytdlp_found = True
             song_time_offset = sample_time_offset
             if play_url is None:
                 # If youtube playback isn't available, try Spotify's MP3 preview
@@ -129,9 +132,6 @@ for index, song_id in enumerate(selected_song_ids):
                             print("Failed to play stream for song sample (ID " + song_id + "). ")
                             if type(error) is FileNotFoundError:
                                 print("Helper program not found, please install ffmpeg and yt-dlp, or be sure you placed yt-dlp.exe and a copy of the folder \"ffmpeg\" (containing bin/ff*.exe) in this program folder. ")
-                            elif target_song.is_private:
-                                print("This is a private song uploaded directly to your account. It cannot be played by this program. ")
-
         target_ratings = target_song.user_ratings
         if target_ratings is None:
             target_ratings = dict()
