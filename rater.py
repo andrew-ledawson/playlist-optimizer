@@ -69,6 +69,7 @@ def extract_playback_url_from_json(json):
     140 and 141 are YouTube Music AAC formats
     18 is 360p MP4, a legacy non-DASH video+audio format
     """
+    # TODO: Warn user to refresh cookies.txt if lower quality detected, premium only song encountered, or private song encountered
     for perferred_format in ["251", "140", "141", "18"]:
         for format_json in json['formats']:
             if format_json['format_id'] == perferred_format:
@@ -111,8 +112,9 @@ for index, song_id in enumerate(selected_song_ids):
             song_time_offset = sample_time_offset
             if play_url is None:
                 # If youtube playback isn't available, try Spotify's MP3 preview
-                print("Falling back to Spotify song preview, ignoring offset")
+                print("Falling back to Spotify song preview")
                 play_url = target_song.spotify_preview_url
+                # Preview is short so ignore offset
                 song_time_offset = 0
             if play_url is not None:
                 # Try different ffplay paths
