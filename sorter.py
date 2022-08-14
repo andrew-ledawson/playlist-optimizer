@@ -71,7 +71,7 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
         user_rating_scores.append(rating_score)
     user_rating_subscore = sum(user_rating_scores) / len(user_rating_scores)
     
-    return (key_subscore * 0.35) + (bpm_subscore * 0.3) + (user_rating_subscore * 0.35)
+    return (key_subscore * 0.3) + (bpm_subscore * 0.3) + (user_rating_subscore * 0.4)
 
 def get_current_similarity_score(song_ids:list) -> float:
     num_songs = len(song_ids)
@@ -94,7 +94,6 @@ def generate_distance_matrix(song_ids:list) -> list:
     ONE_GIBIBYTE = 1024 * 1024 * 1024
     FLOAT_SIZE_BYTES = 64 / 8
     if song_list_length * song_list_length > ONE_GIBIBYTE / FLOAT_SIZE_BYTES:
-        # TODO later: instead of erroring, don't generate matrix and give similarity score callback to solver
         raise Exception("Playlist is too large to easily sort, aborting. ")
 
     distance_list = []
@@ -121,22 +120,27 @@ def solve_for_playlist_order(original_songs):
     """
     Do a traveling salesperson solve
     """
-    problem = {}
+    # Disable distance matrix and just calculate on the fly to avoid n^2 memory usage
+    """problem = {}
     problem['distance_matrix'] = generate_distance_matrix(dedupliated_songs)
     problem['num_vehicles'] = 1 # Only one playlist is being generated
-    problem['depot'] = 0 # Start at dummy node
+    problem['depot'] = 0 # Start at dummy node"""
 
-    manager = pywrapcp.RoutingIndexManager(len(problem['distance_matrix']), problem['num_vehicles'], problem['depot'])
-    #manager = pywrapcp.RoutingIndexManager(len(problem['distance_matrix']), 1, 0)
+    manager = pywrapcp.RoutingIndexManager(len(dedupliated_songs) + 1, 1, 0) # 1 "vehicle" (1 result playlist), start at node 0
 
     def distance_callback(from_index, to_index):
         # Convert from routing variable Index to distance matrix NodeIndex.
+        # This is poorly documented but the NodeIndex seems to just be the input index in the array.
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
-        return problem['distance_matrix'][from_node][to_node]
+        # Dummy 0th node is perfectly connected, so that it is transparent.
+        if from_node == 0 or to_node == 0:
+            return 0.0
+        first_song_id = dedupliated_songs[from_node + 1]
+        second_song_id = dedupliated_songs[to_node + 1]
+        return 1.0 - get_similarity_score_v1(songs_cache[first_song_id], songs_cache[second_song_id])
 
     routing = pywrapcp.RoutingModel(manager)
-    #vertex_traversal_cost = routing.RegisterTransitCallback(song1, song2) # TODO: make passthrough func to catch index 0 and make that 0-weight
     vertex_traversal_cost = routing.RegisterTransitCallback(distance_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(vertex_traversal_cost)
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
@@ -167,7 +171,7 @@ for song_number in sorted_indices:
 if prompt_user_for_bool("Reorder existing playlist on YTM? "):
     if removed_song_count > 0:
         print("Duplicate songs will be at top of playlist. ")
-    # Moves each song to bottom of playlist, putting them all in order with duplicates at the top
+    # Moves each song to bottom of playlist, putting them all in order
     for current_song_id in sorted_song_ids:
         original_index = original_songs.index(current_song_id)
         current_order_id = selected_playlist.order_ids[original_index]
