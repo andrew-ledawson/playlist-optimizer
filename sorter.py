@@ -71,7 +71,7 @@ def get_similarity_score_v1(song1 : Song, song2 : Song) -> float:
         user_rating_scores.append(rating_score)
     user_rating_subscore = sum(user_rating_scores) / len(user_rating_scores)
     
-    return (key_subscore * 0.3) + (bpm_subscore * 0.3) + (user_rating_subscore * 0.4)
+    return (key_subscore * 0.2) + (bpm_subscore * 0.3) + (user_rating_subscore * 0.5)
 
 def get_current_similarity_score(song_ids:list) -> float:
     num_songs = len(song_ids)
@@ -172,6 +172,7 @@ if prompt_user_for_bool("Reorder existing playlist on YTM? "):
     if removed_song_count > 0:
         print("Duplicate songs will be at top of playlist. ")
     # Moves each song to bottom of playlist, putting them all in order
+    # TODO: Show status messages
     for current_song_id in sorted_song_ids:
         original_index = original_songs.index(current_song_id)
         current_order_id = selected_playlist.order_ids[original_index]
