@@ -26,7 +26,7 @@ while desired_volume is None:
 
 sample_time_offset = None
 if desired_volume > 0:
-    print("\nHow many seconds into the song should playback start? 50 is good for many pop songs. ")
+    print("\nHow many seconds into the song should playback start? 60 is good for many pop songs. ")
     while sample_time_offset is None:
         try:
             time_offset_input = int(input("Seconds: "))
@@ -138,6 +138,7 @@ for index, song_id in enumerate(selected_song_ids):
             target_song.user_ratings = target_ratings
         for trait in USER_RATINGS:
             while trait not in target_ratings or target_ratings[trait] is None:
+                # TODO: Support undoing rating
                 try:
                     rating_input = input(trait + ": ")
                     if rating_input == "e":

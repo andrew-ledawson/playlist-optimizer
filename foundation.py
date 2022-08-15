@@ -17,6 +17,7 @@ Global variables and init functions
 # and each value is an explanation.  Capitalize strings correctly for UI display.  
 # Can be updated by adding new rating fields and/or moving out deprecated fields.  
 # Ratings are presumed to go from +2 (strongly matches category) to -2 (extreme opposite of category)
+# TODO: Ideas: Frission?  Boppable (but that's basicaly drive)?
 USER_RATINGS = {'Positivity' : 'Hopeful and optimistic, or regretful and pessimistic.',
                 'Drive' : 'Driving and forceful, or unhurried and gentle.',
                 'Presence' : 'Captivating and focused, or detached and distant.',
